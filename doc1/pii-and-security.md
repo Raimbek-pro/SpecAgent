@@ -1,5 +1,10 @@
 # PII masking and security
 
+> **In one minute**
+> - PII is replaced with tokens **before** anything is logged or sent to a model. Only the demasker turns tokens back into real values.
+> - Masking uses checksums (ИИН mod-11, card Luhn), so ordinary numbers are left alone.
+> - A ТЗ is treated as untrusted input. Tools are read-only and hold no credentials.
+
 The bank's two fears are "the AI leaks our data" and "the AI makes things up". This page covers the first; grounding and the deterministic checks in [agents.md](agents.md) cover the second.
 
 ## Perimeter

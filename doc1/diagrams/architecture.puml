@@ -1,0 +1,141 @@
+@startuml tz_auditor_architecture
+' BCC-HUB FinTech TZ Auditor — v2
+' Redesigned along the "Managed Agents" principles:
+'   session (durable log)  |  brain (stateless harness)  |  hands (tools behind one interface)
+title BCC-HUB FinTech TZ Auditor — Multi-Agent Architecture v2\n(Session / Brain / Hands)
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName Arial
+skinparam ArrowColor #444444
+skinparam package {
+  BorderColor #555555
+  FontStyle bold
+}
+skinparam database {
+  BackgroundColor #F4F4F4
+}
+left to right direction
+
+actor "Аналитик" as Analyst
+
+' ───────────────────────── Security perimeter ─────────────────────────
+package "Security Perimeter (FastAPI)" as SEC #FDECEC {
+  component "Web UI" as UI
+  component "API Gateway\n(AuthN/Z, rate limit)" as GW
+  component "Document Parser\n(docx/pdf → структура)" as Parser
+  component "PII Masker\n(ИИН, счета, IP → токены)" as Masker
+  component "Demasker\n(только на выходе)" as Demasker
+  database "PII Vault\n(token ↔ value, KMS)" as PIIVault
+}
+
+' ───────────────────────── Session (state) ─────────────────────────
+package "Session Layer — durable state" as SESS #E8F1FB {
+  database "Session Event Log\n(append-only, Postgres)\n—\nemitEvent(id, event)\ngetEvents(id, from, to)\ngetSession(id)" as Log
+  database "Artifacts Store\n(обезличенное ТЗ, сырые\nбаги JSON, патчи, .docx)" as Artifacts
+}
+
+' ───────────────────────── Brain (harness) ─────────────────────────
+package "Brain — Stateless Harness (LangGraph workers)" as BRAIN #FFF8E1 {
+  component "Orchestrator\nwake(sessionId) → resume\n(checkpointer = Event Log)" as Orch
+  component "Supervisor Agent\n(динамическая маршрутизация)" as Sup
+
+  package "Critic Registry (pluggable)" as REG #FFFDF2 {
+    interface "Critic\nreview(tz_slice) → Finding[]" as ICritic
+    component "Logic & Cross-Ref\n(противоречия)" as C1
+    component "QA & Ambiguity\n(Gherkin / SLA)" as C2
+    component "Compliance\n(НБРК / PCI DSS)" as C3
+    component "Distributed Systems\n(Idempotency / Saga)" as C4
+    component "+ новые критики\n(конфиг, без правки графа)" as Cn
+  }
+
+  package "Meta-Critic Judge" as JUDGE #F3E8F7 {
+    component "Merge & Conflict Resolution\n(неразрушающая: ссылки на\nсырые findings в логе)" as Merge
+    component "Grounding Check\n(цитата ∈ исходное ТЗ?)" as Ground
+    component "Severity Scoring\n(Blocker / Critical / Minor)" as Sev
+  }
+
+  component "Patch Writer ⇄ Verifier\n(генерация правок, ≤ N итераций)" as Patch
+}
+
+' ───────────────────────── Hands (tools) ─────────────────────────
+package "Hands — Tool Gateway" as HANDS #E9F7EC {
+  interface "execute(name, input)\n→ result | ToolError" as Exec
+  component "MCP Proxy\n(креды из Vault,\nвне контекста LLM)" as MCP
+  component "rag.search" as TRag
+  component "tz.read_span\n(точные цитаты)" as TSpan
+  component "docx.render\n(sandbox, по запросу)" as TDocx
+  database "Qdrant RAG\n(стандарты, регламенты)" as Qdrant
+  database "Secrets Vault" as SecVault
+}
+
+' ───────────────────────── Evaluation (outside runtime) ─────────────────────────
+package "Eval & Ablation (offline)" as EVAL #EEEEEE {
+  component "Golden set ТЗ\n+ регрессионные метрики" as Golden
+  component "Ablation runner\n(нужен ли этап на новой модели?)" as Ablate
+}
+
+' ───────────────────────── Flows ─────────────────────────
+Analyst --> UI
+UI --> GW
+GW --> Parser
+Parser --> Masker
+Masker --> PIIVault : store tokens
+Masker --> Artifacts : обезличенное ТЗ
+Masker --> Log : emitEvent(TZ_INGESTED)
+GW --> Orch : start / wake(sessionId)
+
+Orch --> Log : getSession / emitEvent
+Orch --> Sup
+Sup ..> ICritic : fan-out (parallel)
+C1 -up-|> ICritic
+C2 -up-|> ICritic
+C3 -up-|> ICritic
+C4 -up-|> ICritic
+Cn -up-|> ICritic
+
+ICritic --> Log : raw findings (JSON)
+ICritic --> Exec : rag.search / tz.read_span
+
+Log --> Merge : getEvents(raw findings)
+Merge --> Ground
+Ground --> Exec : tz.read_span
+Ground --> Sev
+Sev --> Log : validated defects
+Sev --> Patch
+Patch --> Exec : tz.read_span / rag.search
+Patch --> Log : patches
+Patch --> Exec : docx.render
+
+Exec --> MCP
+MCP --> SecVault : fetch creds
+MCP --> TRag
+MCP --> TSpan
+MCP --> TDocx
+TRag --> Qdrant
+TSpan --> Artifacts
+TDocx --> Artifacts
+
+Artifacts --> Demasker : отчёт + .docx
+Demasker --> PIIVault : resolve tokens
+Demasker --> UI : отчёт (демаскированный)
+
+Golden ..> Ablate
+Ablate ..> Orch : конфиг этапов
+
+note bottom of Log
+  Источник истины. Сырые findings не удаляются —
+  дедупликация лишь добавляет события-ссылки.
+  Падение воркера → wake(sessionId) продолжает с последнего события.
+end note
+
+note bottom of Exec
+  Падение инструмента/песочницы возвращается как ToolError,
+  а не роняет сессию. Песочница поднимается только по запросу.
+end note
+
+note top of SEC
+  LLM-агенты видят только токены.
+  Демаскирование — единственная точка выхода PII.
+end note
+@enduml

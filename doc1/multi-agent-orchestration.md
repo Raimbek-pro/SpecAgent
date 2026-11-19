@@ -1,5 +1,10 @@
 # Multi-agent orchestration
 
+> **In one minute**
+> - One method, `RunAsync(sessionId)`, both **starts** and **resumes** an audit. It skips every stage that already has an event in the log.
+> - Critics run **in parallel**. Each writes its own result to the log, so nothing is held only in memory.
+> - Strong models make the decisions; cheaper models do the routine reading. The split is configuration, not code.
+
 Topology: **Supervisor → parallel specialist critics → Judge (consensus) → Writer ⇄ Verifier (critic-refiner loop)**. Subagents are only worth their cost if each one adds independent signal; this layout is designed so that they do.
 
 ```mermaid

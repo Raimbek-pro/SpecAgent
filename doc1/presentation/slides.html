@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>SpecAgent — архитектура</title>
+<style>
+@page { size: 1600px 900px; margin: 0; }
+:root{
+  --ink:#14171a; --mute:#59626b; --line:#d6dbe0; --paper:#ffffff; --soft:#f5f6f8;
+  --sec:#c4161c;  --sec-bg:#fdecec;
+  --ses:#1c5fa8;  --ses-bg:#e8f1fb;
+  --brn:#7a5400;  --brn-bg:#fff8e1;
+  --hnd:#2b7a3e;  --hnd-bg:#e9f7ec;
+  --evl:#555d66;  --evl-bg:#eeeeee;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--paper)}
+body{font-family:-apple-system,"SF Pro Text","Helvetica Neue",Arial,sans-serif;color:var(--ink);-webkit-print-color-adjust:exact;print-color-adjust:exact}
+.slide{width:1600px;height:900px;padding:72px 88px 64px;position:relative;overflow:hidden;page-break-after:always;break-after:page;display:flex;flex-direction:column}
+.slide:last-child{page-break-after:auto;break-after:auto}
+.kicker{font-size:20px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);margin-bottom:14px}
+h1{font-size:54px;line-height:1.08;font-weight:700;letter-spacing:-.015em;max-width:1300px}
+h2{font-size:28px;font-weight:600;margin-bottom:10px}
+p,li,td,th{font-size:25px;line-height:1.4}
+.lead{font-size:30px;line-height:1.35;color:var(--mute);max-width:1200px;margin-top:20px}
+.body{margin-top:40px;flex:1;min-height:0}
+.foot{position:absolute;left:88px;right:88px;bottom:28px;display:flex;justify-content:space-between;font-size:16px;color:var(--mute)}
+ul{list-style:none}
+ul.dots li{padding-left:28px;position:relative;margin-bottom:12px}
+ul.dots li::before{content:"";position:absolute;left:4px;top:.6em;width:9px;height:9px;border-radius:50%;background:var(--ink)}
+b{font-weight:650}
+code{font-family:"SF Mono",Menlo,monospace;font-size:.88em;background:var(--soft);padding:1px 6px;border-radius:5px}
+.grid{display:grid;gap:28px}
+.grid > table, .grid > div{align-self:start}
+.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
+.card{border:1.5px solid var(--line);border-radius:14px;padding:26px 28px;background:var(--paper)}
+.card h2{margin-bottom:12px}
+.card p,.card li{font-size:22px}
+.sec{background:var(--sec-bg);border-color:var(--sec)} .sec h2,.t-sec{color:var(--sec)}
+.ses{background:var(--ses-bg);border-color:var(--ses)} .ses h2,.t-ses{color:var(--ses)}
+.brn{background:var(--brn-bg);border-color:var(--brn)} .brn h2,.t-brn{color:var(--brn)}
+.hnd{background:var(--hnd-bg);border-color:var(--hnd)} .hnd h2,.t-hnd{color:var(--hnd)}
+.evl{background:var(--evl-bg);border-color:var(--evl)}
+table{border-collapse:collapse;width:100%}
+th{text-align:left;font-weight:600;color:var(--mute);font-size:20px;text-transform:uppercase;letter-spacing:.04em;padding:0 18px 12px 0;border-bottom:2px solid var(--ink)}
+td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:top;font-size:23px}
+.crop{border:1.5px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
+.crop svg{display:block;width:100%;height:100%}
+.flow{display:flex;align-items:center;gap:9px;flex-wrap:nowrap}
+.chip{border-radius:10px;padding:12px 14px;font-size:20px;font-weight:600;border:1.5px solid;white-space:nowrap}
+.arrow{font-size:24px;color:var(--mute)}
+.big{font-size:84px;font-weight:700;letter-spacing:-.02em;line-height:1}
+.steps{counter-reset:s;display:grid;grid-template-columns:repeat(3,1fr);gap:18px;align-content:start}
+.step{border-radius:12px;padding:24px 24px 26px;border:1.5px solid;position:relative}
+.step .n{font-size:18px;font-weight:700;color:var(--mute)}
+.step .t{font-size:23px;font-weight:650;margin:4px 0}
+.step .e{font-family:"SF Mono",Menlo,monospace;font-size:17px;color:var(--mute)}
+.step.crash{border-style:dashed;background:#fff;border-color:var(--sec)}
+.tag{display:inline-block;font-size:17px;font-weight:600;padding:3px 10px;border-radius:999px;border:1.5px solid;margin-right:10px;vertical-align:2px;white-space:nowrap;min-width:110px;text-align:center}
+.ok{color:var(--hnd);border-color:var(--hnd)}.todo{color:var(--mute);border-color:var(--line)}
+.quote{font-size:34px;line-height:1.3;font-weight:600;max-width:1250px}
+.title-slide{justify-content:center;background:var(--ink);color:#fff}
+.title-slide .kicker{color:#aab3bc}
+.title-slide h1{font-size:72px;max-width:1300px}
+.title-slide .lead{color:#c9d0d6}
+.title-slide .foot{color:#8f99a3}
+.bar{display:flex;gap:0;height:14px;border-radius:7px;overflow:hidden;margin-top:56px;width:640px}
+.bar i{flex:1}
+</style>
+</head>
+<body>
+
+<!-- 1 -->
+<section class="slide title-slide">
+  <div class="kicker">BCC-HUB × MNU FinTech Hackathon 2026</div>
+  <h1>SpecAgent: AI-агент, который проверяет ТЗ как старший системный аналитик</h1>
+  <p class="lead">Архитектура v2: Session / Brain / Hands. Находит дефекты, доказывает каждый цитатой и пишет исправление.</p>
+  <div class="bar"><i style="background:var(--sec)"></i><i style="background:var(--ses)"></i><i style="background:var(--brn)"></i><i style="background:var(--hnd)"></i></div>
+  <div class="foot"><span>github.com/Raimbek-pro/SpecAgent</span><span>Черновик архитектуры, 19.11.2026</span></div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="kicker">Проблема</div>
+  <h1>Ошибки в ТЗ становятся инцидентами в проде</h1>
+  <div class="body grid g3" style="flex:none">
+    <div class="card"><div class="big">~4 ч</div><p style="margin-top:16px">уходит у аналитика на ручную проверку одного ТЗ</p></div>
+    <div class="card"><h2>Что пропускают</h2><ul class="dots"><li>двойное списание при таймауте</li><li>CVV и номер карты в логах</li><li>DECLINED в одном разделе, REJECTED в другом</li></ul></div>
+    <div class="card"><h2>Почему банк не доверяет ИИ</h2><ul class="dots"><li>«ИИ сольёт данные клиентов»</li><li>«ИИ начнёт галлюцинировать»</li><li>«что он сделал, не проверить»</li></ul></div>
+  </div>
+  <p class="quote" style="margin-bottom:40px">Нужен агент, который находит такие дефекты за минуты и которому банк может доверять.</p>
+  <div class="foot"><span>SpecAgent</span><span>2</span></div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="kicker">Решение</div>
+  <h1>ТЗ на входе, доказанные дефекты и готовые правки на выходе</h1>
+  <div class="body grid g2">
+    <div>
+      <table>
+        <tr><th>Получаете</th><th></th></tr>
+        <tr><td><b>Дефект</b></td><td>с разделом и дословной цитатой из ТЗ</td></tr>
+        <tr><td><b>Критичность</b></td><td>Blocker / Critical / Major / Minor и оценка 0–100</td></tr>
+        <tr><td><b>Правка</b></td><td>«было → стало» и Gherkin-сценарии, проверенные агентом</td></tr>
+        <tr><td><b>Трейс</b></td><td>какой агент нашёл и почему арбитр оставил</td></tr>
+      </table>
+    </div>
+    <div class="card sec" style="align-self:start">
+      <h2>Пример из демо</h2>
+      <p style="font-size:24px"><b>п. 4.3</b>: «при ошибке запрос повторяется»</p>
+      <p style="font-size:24px;margin-top:14px"><b class="t-sec">Blocker</b>: нет ключа идемпотентности, и сетевой таймаут приводит к двойному списанию.</p>
+      <p style="font-size:24px;margin-top:14px"><b>Правка:</b> обязательный <code>Idempotency-Key</code>, хранение результата 24 ч, сценарии Given / When / Then.</p>
+    </div>
+  </div>
+  <div class="foot"><span>SpecAgent</span><span>3</span></div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="kicker">Главная идея</div>
+  <h1>Разделяем «мозг», «руки» и «память»</h1>
+  <p class="lead">Подход из инженерной статьи Anthropic о Managed Agents. Агент, у которого всё в одном процессе, при падении теряет работу, а секреты в нём лежат рядом с кодом модели.</p>
+  <div class="body grid g3" style="margin-top:34px;align-items:start">
+    <div class="card ses"><h2>Session · память</h2><p><b>Журнал событий</b>, только дописывается. Единственное состояние системы и готовый аудит-трейл.</p><p style="margin-top:14px;color:var(--mute)">У нас: PostgreSQL, таблица <code>audit_events</code></p></div>
+    <div class="card brn"><h2>Brain · мозг</h2><p><b>Агенты без состояния</b>. Любой воркер можно убить: новый вызывает <code>wake(sessionId)</code> и продолжает.</p><p style="margin-top:14px;color:var(--mute)">У нас: C#-оркестратор и 8 агентов на Claude</p></div>
+    <div class="card hnd"><h2>Hands · руки</h2><p><b>Инструменты за одной дверью</b> <code>execute(name, input)</code>. Секретов внутри нет.</p><p style="margin-top:14px;color:var(--mute)">У нас: чтение ТЗ, поиск по стандартам, рендер .docx</p></div>
+  </div>
+  <p style="margin-top:36px;font-size:26px"><b>«Cattle, not pets»</b>: воркеры заменяемы, их не «лечат» при падении.</p>
+  <div class="foot"><span>Источник: anthropic.com/research/managed-agents</span><span>4</span></div>
+</section>
+
+<!-- 5 -->
+<section class="slide" style="padding:44px 40px 52px">
+  <div class="kicker" style="margin-left:48px">Полная схема · v2</div>
+  <div class="crop" style="flex:1;margin-top:8px">
+    <svg viewBox="0 0 4077 1613" preserveAspectRatio="xMidYMid meet"><image href="../diagrams/architecture.svg" width="4077" height="1613"/></svg>
+  </div>
+  <div class="foot" style="left:48px;right:48px"><span>Схема в векторе: увеличьте, чтобы прочитать подписи. На схеме «FastAPI» и «LangGraph»; у нас ASP.NET Core и C#-оркестратор.</span><span>5</span></div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="kicker t-sec">Периметр безопасности</div>
+  <h1>Модель видит только токены</h1>
+  <div class="body">
+    <div class="flow">
+      <span class="chip" style="border-color:var(--line)">ТЗ</span><span class="arrow">→</span>
+      <span class="chip sec" style="background:var(--sec-bg);border-color:var(--sec)">Parser</span><span class="arrow">→</span>
+      <span class="chip sec" style="background:var(--sec-bg);border-color:var(--sec)">PII Masker</span><span class="arrow">→</span>
+      <span class="chip" style="background:var(--ses-bg);border-color:var(--ses)">Журнал (токены)</span><span class="arrow">→</span>
+      <span class="chip" style="background:var(--brn-bg);border-color:var(--brn)">Агенты + Claude</span><span class="arrow">→</span>
+      <span class="chip sec" style="background:var(--sec-bg);border-color:var(--sec)">Demasker</span><span class="arrow">→</span>
+      <span class="chip" style="border-color:var(--line)">Отчёт</span>
+    </div>
+    <div class="grid g2" style="margin-top:44px">
+      <table>
+        <tr><th>Что маскируем</th><th>Как отличаем от просто чисел</th></tr>
+        <tr><td>ИИН / БИН → <code>[IIN_1]</code></td><td>контрольная сумма mod 11</td></tr>
+        <tr><td>Номер карты → <code>[PAN_1]</code></td><td>алгоритм Луна</td></tr>
+        <tr><td>IBAN KZ, телефон, e-mail, IP, ключи</td><td>строгие шаблоны</td></tr>
+      </table>
+      <ul class="dots" style="padding-top:6px">
+        <li><b>PII Vault</b> единственный знает «токен ↔ значение»</li>
+        <li><b>Demasker</b> единственная точка выхода реальных данных</li>
+        <li>Одно значение даёт один токен: агенты всё ещё видят связи между разделами</li>
+        <li>Текст ТЗ для модели только данные, а не команды</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot"><span>SpecAgent</span><span>6</span></div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="kicker t-brn">Brain · фрагмент схемы</div>
+  <h1>Мозг: маршрутизация, рой критиков, арбитр, правки</h1>
+  <div class="crop" style="flex:1;margin-top:30px"><svg viewBox="895 484 1752 685" preserveAspectRatio="xMidYMid meet"><image href="../diagrams/architecture.svg" width="4077" height="1613"/></svg></div>
+  <div class="foot"><span>Supervisor → Critic Registry (параллельно) → Meta-Critic Judge → Patch Writer ⇄ Verifier</span><span>7</span></div>
+</section>
+
+<!-- 7b -->
+<section class="slide">
+  <div class="kicker t-brn">Brain · агенты</div>
+  <h1>Четыре уровня агентов, каждый проверяет предыдущий</h1>
+  <div class="body">
+    <table>
+      <tr><th style="width:24%">Агент</th><th>Что делает</th><th style="width:18%">Модель</th></tr>
+      <tr><td><b>Supervisor</b></td><td>Определяет домен ТЗ, решает, каких критиков и какие разделы запускать</td><td>Opus 5.5</td></tr>
+      <tr><td><b>4 критика</b></td><td>Параллельно, каждый в своём контексте: логика, QA, комплаенс (НБРК, PCI DSS), распределённые системы</td><td>Sonnet / Haiku 5.5</td></tr>
+      <tr><td><b>Rules</b></td><td>Детерминированные проверки без ИИ: идемпотентность, CVV в логах, float для денег</td><td>код</td></tr>
+      <tr><td><b>Meta-Critic</b></td><td>Сверяет цитаты, склеивает дубли, отсеивает ложные срабатывания, ставит severity</td><td>Opus 5.5</td></tr>
+      <tr><td><b>Writer ⇄ Verifier</b></td><td>Пишет правку и Gherkin; проверяющий сверяет с соседними разделами, до 2 раундов</td><td>Sonnet → Opus</td></tr>
+    </table>
+  </div>
+  <div class="foot"><span>Новый критик: это промпт и строка конфига, граф не меняется</span><span>8</span></div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="kicker t-ses">Session · журнал событий</div>
+  <h1>Воркер упал? Ничего не потеряно</h1>
+  <div class="body grid" style="grid-template-columns:1fr 2.1fr;gap:40px">
+    <div class="crop"><svg viewBox="3068 329 271 308" preserveAspectRatio="xMidYMid meet"><image href="../diagrams/architecture.svg" width="4077" height="1613"/></svg></div>
+    <div>
+      <div class="steps" style="grid-template-columns:1fr 1fr">
+        <div class="step" style="border-color:var(--ses);background:var(--ses-bg)"><div class="n">1</div><div class="t">Критики отработали</div><div class="e">FINDINGS × 4 в журнале</div></div>
+        <div class="step crash"><div class="n t-sec">2</div><div class="t t-sec">Воркер арбитра упал</div><div class="e">в журнале нет REPORT_READY</div></div>
+        <div class="step" style="border-color:var(--brn);background:var(--brn-bg)"><div class="n">3</div><div class="t">Новый воркер: wake(s-42)</div><div class="e">getSession → RESUMED</div></div>
+        <div class="step" style="border-color:var(--hnd);background:var(--hnd-bg)"><div class="n">4</div><div class="t">Продолжает с арбитра</div><div class="e">критики не перезапускаются</div></div>
+      </div>
+      <ul class="dots" style="margin-top:30px">
+        <li><code>emitEvent</code> / <code>getEvents</code> / <code>getSession</code>: PostgreSQL, только дописывание</li>
+        <li>Сырые замечания <b>не удаляются</b>: слияние только добавляет события-ссылки</li>
+        <li>Журнал заодно служит полным аудит-трейлом для банка</li>
+      </ul>
+    </div>
+  </div>
+  <div class="foot"><span>Проверено тестом в прототипе</span><span>9</span></div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="kicker t-hnd">Hands · инструменты</div>
+  <h1>Одна дверь ко всем инструментам, ключей за ней нет</h1>
+  <div class="body">
+    <div class="crop" style="height:300px"><svg viewBox="2452 1246 1618 360" preserveAspectRatio="xMidYMid meet"><image href="../diagrams/architecture.svg" width="4077" height="1613"/></svg></div>
+    <div class="grid g3" style="margin-top:34px">
+      <div class="card hnd"><h2>execute(name, input)</h2><p>Один интерфейс. Ошибка инструмента возвращается как <code>ToolError</code>, сессия не падает. Каждый вызов попадает в журнал.</p></div>
+      <div class="card hnd"><h2>MCP Proxy + Vault</h2><p>Ключи берёт прокси из хранилища. Промпт-инъекции в ТЗ нечего украсть.</p></div>
+      <div class="card hnd"><h2>Песочница по запросу</h2><p><code>docx.render</code> стартует только когда нужен отчёт, поэтому первый ответ приходит быстрее.</p></div>
+    </div>
+  </div>
+  <div class="foot"><span>SpecAgent</span><span>10</span></div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="kicker">Доверие</div>
+  <h1>Против галлюцинаций: код там, где ошибка недопустима</h1>
+  <div class="body">
+    <table>
+      <tr><th>Риск</th><th>Контроль</th><th>Кто решает</th></tr>
+      <tr><td>Цитаты нет в ТЗ</td><td>Дословная сверка с документом, иначе замечание отбрасывается</td><td><b>код</b></td></tr>
+      <tr><td>«Нет X», а X описан в приложении</td><td>Арбитр читает весь документ и отклоняет с объяснением</td><td>ИИ, в журнале</td></tr>
+      <tr><td>Ответ не в том формате</td><td>Structured outputs: строгая JSON-схема из C#-типа</td><td><b>код</b></td></tr>
+      <tr><td>Оценка «плавает» между запусками</td><td>Quality Score считается формулой</td><td><b>код</b></td></tr>
+      <tr><td>Критичный дефект пропущен</td><td>Детерминированные правила + обязательные критики для платежей</td><td><b>код</b></td></tr>
+      <tr><td>Правка ломает соседний раздел</td><td>Verifier сверяет с соседями, до 2 раундов</td><td>ИИ, в журнале</td></tr>
+    </table>
+  </div>
+  <div class="foot"><span>SpecAgent</span><span>11</span></div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <div class="kicker">Один аудит целиком</div>
+  <h1>От загрузки до отчёта: девять событий в журнале</h1>
+  <div class="body steps">
+    <div class="step" style="border-color:var(--sec);background:var(--sec-bg)"><div class="n">1</div><div class="t">Загрузка и маскирование</div><div class="e">TZ_INGESTED</div></div>
+    <div class="step" style="border-color:var(--brn);background:var(--brn-bg)"><div class="n">2</div><div class="t">Старт сессии s-42</div><div class="e">RUN_STARTED</div></div>
+    <div class="step" style="border-color:var(--brn);background:var(--brn-bg)"><div class="n">3</div><div class="t">Supervisor выбирает критиков</div><div class="e">ROUTED</div></div>
+    <div class="step" style="border-color:var(--hnd);background:var(--hnd-bg)"><div class="n">4</div><div class="t">4 критика параллельно</div><div class="e">FINDINGS × 4</div></div>
+    <div class="step crash"><div class="n t-sec">5</div><div class="t t-sec">Падение воркера</div><div class="e">ничего не потеряно</div></div>
+    <div class="step" style="border-color:var(--ses);background:var(--ses-bg)"><div class="n">6</div><div class="t">wake(s-42)</div><div class="e">RESUMED</div></div>
+    <div class="step" style="border-color:var(--brn);background:var(--brn-bg)"><div class="n">7</div><div class="t">Слияние, цитаты, оценка</div><div class="e">MERGED · GROUNDED · SCORED</div></div>
+    <div class="step" style="border-color:var(--hnd);background:var(--hnd-bg)"><div class="n">8</div><div class="t">Правки и .docx</div><div class="e">PATCHES · REPORT_RENDERED</div></div>
+    <div class="step" style="border-color:var(--sec);background:var(--sec-bg)"><div class="n">9</div><div class="t">Демаскирование и выдача</div><div class="e">DELIVERED</div></div>
+  </div>
+  <div class="foot"><span>Цвет шага = слой на схеме</span><span>12</span></div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <div class="kicker">Технологии</div>
+  <h1>Стек и стоимость одного документа</h1>
+  <div class="body grid g2">
+    <table>
+      <tr><th>Слой</th><th>Выбор</th></tr>
+      <tr><td>Backend</td><td>C# / .NET 10, ASP.NET Core</td></tr>
+      <tr><td>ИИ</td><td>Claude через официальный Anthropic C# SDK</td></tr>
+      <tr><td>Журнал</td><td>PostgreSQL, append-only</td></tr>
+      <tr><td>Знания</td><td>PCI DSS, НБРК, стандарт ТЗ → Qdrant</td></tr>
+      <tr><td>Интерфейс</td><td>Split screen + Telegram-бот</td></tr>
+      <tr><td>Запуск</td><td><code>docker compose up</code></td></tr>
+    </table>
+    <div>
+      <h2>Маршрутизация моделей</h2>
+      <ul class="dots">
+        <li><b>Opus 5.5</b>: решения (маршрутизация, арбитр, проверка правок)</li>
+        <li><b>Sonnet 5.5</b>: внимательное чтение (критики, правки)</li>
+        <li><b>Haiku 5.5</b>: рутина (размытые формулировки)</li>
+      </ul>
+      <p style="margin-top:22px;color:var(--mute)">Модели меняются в конфиге, без кода. Сравниваем с простым вариантом «одна модель на всё» и берём то, что дешевле <b>за найденный дефект</b>.</p>
+    </div>
+  </div>
+  <div class="foot"><span>SpecAgent</span><span>13</span></div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <div class="kicker">Качество</div>
+  <h1>Меряем на ТЗ с заранее внесёнными дефектами</h1>
+  <div class="body grid g2">
+    <table>
+      <tr><th>Метрика</th><th>Как считаем</th></tr>
+      <tr><td><b>Precision</b></td><td>верные замечания / все замечания</td></tr>
+      <tr><td><b>Recall</b></td><td>найденные дефекты / все внесённые</td></tr>
+      <tr><td><b>Галлюцинации</b></td><td>доля цитат, отброшенных сверкой</td></tr>
+      <tr><td><b>Время</b></td><td>от RUN_STARTED до отчёта</td></tr>
+      <tr><td><b>Стоимость</b></td><td>токены × цена по каждому агенту</td></tr>
+    </table>
+    <div>
+      <div class="card evl">
+        <h2>Eval &amp; Ablation</h2>
+        <p>На каждой новой модели проверяем: <b>нужен ли ещё этот этап?</b> Обходной путь для одной модели может оказаться лишним для следующей.</p>
+      </div>
+      <p style="margin-top:24px">Сравниваем три варианта: только правила, один промпт и полный SpecAgent. <span style="color:var(--mute)">Цифры появятся после прогона на датасете; здесь мы их не придумываем.</span></p>
+    </div>
+  </div>
+  <div class="foot"><span>Демо-ТЗ: P2P-переводы по номеру телефона, 10 внесённых дефектов</span><span>14</span></div>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <div class="kicker">Где мы сейчас</div>
+  <h1>Прототип работает, план до финала</h1>
+  <div class="body grid g2">
+    <div>
+      <h2>Прототип на C#</h2>
+      <ul style="display:grid;gap:14px">
+        <li><span class="tag ok">готово</span>Парсинг, маскирование, все агенты, журнал, wake()</li>
+        <li><span class="tag ok">проходят</span>11 тестов, включая «падение и продолжение»</li>
+        <li><span class="tag ok">проверено</span>Без ключа API находит оба Blocker демо-ТЗ правилами</li>
+        <li><span class="tag todo">дальше</span>Реальные вызовы Claude, Postgres, Docker, бот</li>
+      </ul>
+    </div>
+    <table>
+      <tr><th>Дата</th><th></th></tr>
+      <tr><td><b>25 ноября</b></td><td>Kick-off, официальный кейс</td></tr>
+      <tr><td><b>25–27 ноября</b></td><td>3 дня разработки</td></tr>
+      <tr><td><b>27 ноября, 23:59</b></td><td>Демо, репозиторий, презентация, студбилеты</td></tr>
+      <tr><td>28 ноября – 1 декабря</td><td>Отбор 12 финалистов</td></tr>
+      <tr><td><b>4 декабря</b></td><td>Grand Final, MNU, Астана</td></tr>
+    </table>
+  </div>
+  <div class="foot"><span>Номинации: Best Architecture · Best Business Value · Best Presentation</span><span>15</span></div>
+</section>
+
+<!-- 15 -->
+<section class="slide title-slide">
+  <div class="kicker">Итог</div>
+  <h1>Банк получает проверку ТЗ, которой можно доверять</h1>
+  <p class="lead">Данные не уходят к модели. Каждое замечание доказано цитатой. Падение воркера ничего не ломает. Всё записано в журнал.</p>
+  <div class="bar"><i style="background:var(--sec)"></i><i style="background:var(--ses)"></i><i style="background:var(--brn)"></i><i style="background:var(--hnd)"></i></div>
+  <div class="foot"><span>github.com/Raimbek-pro/SpecAgent</span><span>Спасибо</span></div>
+</section>
+
+</body>
+</html>

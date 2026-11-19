@@ -1,5 +1,10 @@
 # Agent catalog
 
+> **In one minute**
+> - Four levels. **Supervisor** routes → **critics** review in parallel → **Meta-Critic** judges → **Writer ⇄ Verifier** fix.
+> - Every AI agent makes **one isolated call** with its own prompt, its own slice of the ТЗ and a fixed output format (a C# record).
+> - Every agent has a defined fallback, so one failure never stops the audit.
+
 Eight agents in four levels, plus one deterministic critic. Each LLM agent is **one isolated call**: its own system prompt (a Markdown file), its own slice of the document, its own output contract. No agent shares a conversation with another.
 
 | Level | Agent | Kind | Default model | Effort |

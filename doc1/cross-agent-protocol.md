@@ -1,5 +1,10 @@
 # Cross-agent protocol
 
+> **In one minute**
+> - Agents **never talk to each other directly**. They write typed events to the session log; the orchestrator builds the next agent's input from it.
+> - Each level hands the next one a **typed record** (`RawFinding` → `Finding` → `Patch`), never free text.
+> - Conflicts between critics are resolved in **one place**: the Meta-Critic.
+
 How agents hand work to each other. The short version: **agents never talk directly**. They read inputs the orchestrator gives them and write typed events to the session log. The log is the only shared medium.
 
 ```mermaid
@@ -28,6 +33,16 @@ public sealed record AuditEvent(
     string Message,            // one human-readable line for the live trace
     JsonElement? Payload);     // typed body; masked text only, never real PII
 ```
+
+The same operations under the names used in the [architecture diagram](architecture.md) and the Managed Agents article:
+
+| Article / diagram | C# |
+|---|---|
+| `emitEvent(id, event)` | `IEventStore.AppendAsync(sessionId, type, agent, message, payload)` |
+| `getEvents(id, from, to)` | `IEventStore.ReadAsync(sessionId, afterSeq)` |
+| `getSession(id)` | `AuditState.From(await ReadAsync(sessionId))` |
+| `wake(sessionId)` | `AuditOrchestrator.RunAsync(sessionId)` |
+| `execute(name, input)` | `ToolGateway.ExecuteAsync(sessionId, agent, tool, args, doc)` |
 
 Storage: PostgreSQL table `audit_events (session_id, seq)` primary key, `payload jsonb`. Parallel critics append to the same session concurrently, so `seq` is assigned under a per-session advisory lock (`pg_advisory_xact_lock(hashtext(session_id))`).
 

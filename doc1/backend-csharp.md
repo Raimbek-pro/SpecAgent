@@ -1,5 +1,10 @@
 # C# backend
 
+> **In one minute**
+> - .NET 10 solution: `Core` (domain) ← `Ingestion` (parsing, PII) ← `Agents` (brain) ← `Api` (HTTP).
+> - Claude is called through the official `Anthropic` NuGet package with **structured outputs**, so each agent's answer is guaranteed to match its C# record.
+> - Every external dependency sits behind an interface with an in-memory version for tests.
+
 > The layout below exists as a **prototype** in [`prototype/`](prototype/README.md) (paths there are relative to `doc1/prototype/`). Docker Compose and the Telegram bot are not built yet.
 
 .NET 10, ASP.NET Core minimal API, one solution (`SpecAgent.slnx`) with four projects and a test project. Dependencies point one way: `Api → Agents → Ingestion → Core`.

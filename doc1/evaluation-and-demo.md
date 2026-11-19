@@ -1,5 +1,10 @@
 # Evaluation, demo and timeline
 
+> **In one minute**
+> - We measure the agent on a set of ТЗ with **known, deliberately injected defects**: Precision, Recall, time and cost per document.
+> - The demo ТЗ is a P2P transfer spec with 10 injected defects. The headline is a double debit after a network timeout.
+> - Solutions are due **27 Nov, 23:59**. The Grand Final is **4 Dec** in Astana.
+
 ## Benchmark dataset
 
 ```text
@@ -59,7 +64,7 @@ Report three configurations on the same specs to show what each layer adds:
 | Single prompt, single model | | | | |
 | Full SpecAgent (routing + critics + judge) | | | | |
 
-Comparison point for the pitch: ~15–20 s per document versus ~4 hours of an analyst's review.
+Comparison point for the pitch: target ~15–20 s per document versus ~4 hours of an analyst's review. Report the measured number, not the target.
 
 ## Demo script (pitch, 4 December)
 
@@ -72,16 +77,33 @@ Comparison point for the pitch: ~15–20 s per document versus ~4 hours of an an
 7. **Resilience (optional)**: kill the API container mid-audit, restart, watch `RESUMED` and the report finish without re-running critics.
 8. Close with the metrics table and the architecture diagram (PII perimeter + deterministic checks highlighted).
 
-## Timeline
+## Hackathon timeline and deliverables
 
-| When | What |
+| When | What happens | Our work |
+|---|---|---|
+| Until 24 Nov | Registration (limited places) | Register the team; prototype, knowledge base, dataset (this repo) |
+| **25 Nov** | Online kick-off: official case, requirements, submission form posted in the Telegram community | Read the case; adapt prompts, routing rules, severity criteria and knowledge base |
+| **25–27 Nov** | 3 days of development | Day 1: pipeline end to end on the case documents. Day 2: quality on the full dataset, fix loop, debate view. Day 3: metrics table, Docker Compose, Telegram bot, recording the demo |
+| **27 Nov, 23:59** | Submission deadline | Send all four items below |
+| 28 Nov – 1 Dec | Jury picks 12 finalists | Rehearse the pitch |
+| **4 Dec** | Grand Final, MNU, Astana (Astana teams in person; other cities online) | Live demo, pitch, technical defence |
+
+### Submission checklist (27 Nov, 23:59)
+
+- [ ] **Demo** of the agent working (a recording of the demo script below)
+- [ ] **Repository** with the source code (this repo)
+- [ ] **Presentation** (start from [presentation/SpecAgent-architecture.pdf](presentation/SpecAgent-architecture.pdf))
+- [ ] **Student IDs** of every team member (mandatory; the submission is rejected without them)
+
+### Nominations and what each one rewards
+
+| Nomination | What to show |
 |---|---|
-| Before 25 Nov | Repo skeleton in C#: parsers, PII masker, event log, Claude client with structured outputs, split-screen UI |
-| Before 25 Nov | Knowledge base in Markdown: ТЗ writing standard, FinTech security checklist (idempotency, 3DS, PCI DSS, timeouts, retries), НБРК/АРРФР infosec notes |
-| Before 25 Nov | Dataset: 5–10 specs, at least 3 with injected defects, labels |
-| 25 Nov (kick-off) | Read the official case from БЦК; adapt prompts, routing rules, severity criteria and knowledge base |
-| 72 h hackathon | Day 1: end-to-end pipeline on the demo spec. Day 2: quality on the full dataset, patch loop, debate view. Day 3: metrics table, Docker Compose, Telegram bot, rehearsal |
-| 4 Dec | Pitch: live demo, metrics, architecture |
+| **Best Architecture** | The Session / Brain / Hands diagram, crash-and-resume live, the PII perimeter, deterministic grounding |
+| **Best Business Value** | Minutes instead of hours per ТЗ, Blocker defects caught before development, cost per document |
+| **Best Presentation** | The live demo: a bad ТЗ in, a double-debit Blocker and its fix out |
+
+All 12 finalists receive a prize (300 000 KZT for each of the 3 nomination winners, 100 000 KZT for each of the other 9).
 
 ## Open questions for kick-off
 
