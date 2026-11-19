@@ -4,22 +4,24 @@
 > - Four levels. **Supervisor** routes → **critics** review in parallel → **Meta-Critic** judges → **Writer ⇄ Verifier** fix.
 > - Every AI agent makes **one isolated call** with its own prompt, its own slice of the ТЗ and a fixed output format (a C# record).
 > - Every agent has a defined fallback, so one failure never stops the audit.
+> - Models are Qwen ([models-and-cost.md](models-and-cost.md)). Every critic gets the **rules Qdrant matched to its sections**, and a **checklist pass** verifies every mandatory rule.
 
-Eight agents in four levels, plus one deterministic critic. Each LLM agent is **one isolated call**: its own system prompt (a Markdown file), its own slice of the document, its own output contract. No agent shares a conversation with another.
+Nine agents in four levels, plus one deterministic critic. Each LLM agent is **one isolated call**: its own system prompt (a Markdown file), its own slice of the document, its own output contract. No agent shares a conversation with another.
 
-| Level | Agent | Kind | Default model | Effort |
+| Level | Agent | Kind | Default model | Price tier |
 |---|---|---|---|---|
-| 1 | `supervisor` | LLM + deterministic floor | Claude Opus 5.5 | medium |
-| 2 | `logic` | LLM critic | Claude Sonnet 5.5 | medium |
-| 2 | `qa` | LLM critic | Claude Haiku 5.5 | low |
-| 2 | `compliance` | LLM critic + knowledge base | Claude Sonnet 5.5 | high |
-| 2 | `distributed` | LLM critic + knowledge base | Claude Sonnet 5.5 | high |
+| 1 | `supervisor` | LLM + deterministic floor | `qwen4-max` | decisions |
+| 2 | `logic` | LLM critic + matched rules | `qwen3.7-plus` | critics |
+| 2 | `qa` | LLM critic + matched rules | `qwen3.7-flash` | routine |
+| 2 | `compliance` | LLM critic + matched rules | `qwen3.7-plus` | critics |
+| 2 | `distributed` | LLM critic + matched rules | `qwen3.7-plus` | critics |
+| 2 | `checklist` | Mandatory rules from Qdrant + LLM check + quote check | `qwen3.7-flash` | routine |
 | 2 | `rules` | Deterministic, no LLM | — | — |
-| 3 | `meta-critic` | Deterministic grounding + LLM judge + deterministic score | Claude Opus 5.5 | high |
-| 4 | `patch-writer` | LLM | Claude Sonnet 5.5 | medium |
-| 4 | `patch-verifier` | LLM + deterministic pre-check | Claude Opus 5.5 | medium |
+| 3 | `meta-critic` | Deterministic grounding + LLM judge + deterministic score | `qwen4-max` | decisions |
+| 4 | `patch-writer` | LLM + matched rules | `qwen3.7-plus` | critics |
+| 4 | `patch-verifier` | LLM + deterministic pre-check | `qwen4-max` | decisions |
 
-Models and effort are configuration (`ModelRouting` in `appsettings.json`), not code.
+Models are configuration (`ModelRouting` in `appsettings.json`), not code. Prices, the Gemini comparison and why these exact versions (they support strict JSON schema output) are in [models-and-cost.md](models-and-cost.md).
 
 ## Rules every LLM agent shares
 
@@ -60,7 +62,9 @@ public sealed record SupervisorOutput
 
 ## Level 2 — Domain critics
 
-All four LLM critics share one implementation (`CriticAgent`) parameterised by a `CriticProfile(Name, PromptFile, KbQuery)`. Before calling the model, each critic runs `kb.search(KbQuery)` through the tool gateway and gets the relevant knowledge-base excerpts in its context.
+All four LLM critics share one implementation (`CriticAgent`) parameterised by a `CriticProfile(Name, PromptFile, Domains)`.
+
+**Knowledge comes with the input, not on request.** Right after upload, code matches every section to its top rules in Qdrant (`RULES_MATCHED`). Each critic then receives its sections **with the rules matched to them**, filtered to the critic's domains (e.g. Compliance gets PCI DSS / НБРК rules, Distributed gets idempotency / Saga rules). A critic no longer needs to *think of* a rule for it to be in front of it.
 
 **Output contract (all critics):**
 
@@ -108,6 +112,19 @@ Each finding is stored as a `RawFinding` with a stable id such as `distributed-3
 - No compensation (Saga / reversal) when a later step fails.
 - Race conditions: concurrent debits, double click, parallel sessions.
 - Webhook ordering, signature and replay protection; no end-of-day reconciliation.
+
+### `checklist` — Checklist pass
+
+Closes the "nobody noticed, so nobody looked it up" gap. Instead of hoping a critic notices a missing requirement, it walks a list.
+
+1. The Supervisor's domain (e.g. "P2P-переводы") selects every rule tagged **mandatory** for that domain from Qdrant. This is a filter, so nothing on the list is skipped.
+2. For each rule, a small call to `qwen3.7-flash` answers: **covered** (with a quote showing where) or **not covered**.
+3. "Covered" must pass the same word-for-word quote check as findings; a claim without a real quote counts as not covered.
+4. "Not covered" becomes a raw finding (`checklist-n`) with the rule as `StandardRef`, judged like any other.
+
+Example: rule "SMS/OTP confirmation must limit attempts and lock out" is mandatory for P2P transfers. Section 2.3 says only «Клиент подтверждает перевод кодом из SMS», so the result is *not covered* → finding on 2.3, even if no critic thought about brute force.
+
+Runs in parallel with the critics. About 40 small calls cost well under $0.01 per ТЗ.
 
 ### `rules` — Deterministic critic (no LLM)
 Runs in milliseconds, works offline, gives the same answer every time. It is the floor under the LLM critics and the baseline for evaluation.

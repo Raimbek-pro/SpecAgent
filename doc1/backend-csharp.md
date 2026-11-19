@@ -2,7 +2,7 @@
 
 > **In one minute**
 > - .NET 10 solution: `Core` (domain) ← `Ingestion` (parsing, PII) ← `Agents` (brain) ← `Api` (HTTP).
-> - Claude is called through the official `Anthropic` NuGet package with **structured outputs**, so each agent's answer is guaranteed to match its C# record.
+> - Models are **Qwen**, called through the OpenAI-compatible API with the official `OpenAI` .NET library and **strict JSON schema output**, so each agent's answer must match its C# record. The same client works for Alibaba Cloud or a self-hosted Qwen.
 > - Every external dependency sits behind an interface with an in-memory version for tests.
 
 > The layout below exists as a **prototype** in [`prototype/`](prototype/README.md) (paths there are relative to `doc1/prototype/`). Docker Compose and the Telegram bot are not built yet.
@@ -21,7 +21,7 @@ SpecAgent/
 │  │  ├─ Parsing/                       IDocumentParser, Docx/Pdf/Text parsers, SectionBuilder
 │  │  └─ Pii/PiiMasker.cs               PiiMasker, IPiiVault, InMemoryPiiVault
 │  ├─ SpecAgent.Agents/        the brain
-│  │  ├─ Llm/                           ILlmClient, ClaudeLlmClient, StrictJsonSchema, ModelRoutingOptions, PromptLibrary
+│  │  ├─ Llm/                           ILlmClient, QwenLlmClient (prototype: ClaudeLlmClient), StrictJsonSchema, ModelRoutingOptions, PromptLibrary
 │  │  ├─ Prompts/*.md                   one Markdown prompt per agent + _shared.md
 │  │  ├─ Agents/                        Contracts, SupervisorAgent, CriticAgent, RuleBasedCritic, MetaCriticAgent, PatchLoop
 │  │  ├─ Orchestration/                 AuditOrchestrator, AuditState, AuditQueue, AuditWorker
@@ -39,7 +39,8 @@ SpecAgent/
 
 | Package | Used for |
 |---|---|
-| `Anthropic` (official C# SDK) | Claude Messages API |
+| `OpenAI` (official .NET library) | Qwen via Model Studio's OpenAI-compatible API, or self-hosted vLLM |
+| `Qdrant.Client` | Qdrant vector search for the knowledge base |
 | `DocumentFormat.OpenXml` | .docx parsing (heading styles → sections, tables → Markdown) |
 | `PdfPig` | .pdf text extraction |
 | `Npgsql` | PostgreSQL event store |
@@ -70,42 +71,50 @@ public interface IDocumentParser { bool CanParse(string fileName); TzDocument Pa
 
 Each has a dev implementation (in-memory, keyword search) and a production one (Postgres, Qdrant, separate vault service) behind the same interface. Tests swap `ILlmClient` for a scripted `FakeLlmClient`, so the whole pipeline — including crash/resume — runs without network or API key.
 
-## Calling Claude (`ClaudeLlmClient`)
+## Calling Qwen (`QwenLlmClient`)
 
-One code path for every agent, on the beta Messages endpoint of the official SDK:
+> The prototype still contains `ClaudeLlmClient`. Switching to Qwen means replacing that **one class**; the agents only see `ILlmClient`. The snippet below is a design sketch to be compile-checked when we implement it.
+
+Alibaba Model Studio exposes an **OpenAI-compatible** endpoint, so we use the official **OpenAI .NET library** (`OpenAI` NuGet) pointed at it. The same code works against a **self-hosted** open-weight Qwen served by vLLM: only the endpoint and model name change.
 
 ```csharp
-using Anthropic;
-using Anthropic.Models.Beta.Messages;
+using System.ClientModel;
+using OpenAI;
+using OpenAI.Chat;
 
-var parameters = new MessageCreateParams
-{
-    Model     = route.Model,                       // from ModelRouting for this agent
-    MaxTokens = call.MaxTokens,
-    System    = call.System,                       // role prompt + _shared.md
-    Messages  = [new BetaUserMessageParam { Content = call.User }],
-    OutputConfig = new BetaOutputConfig
+var chat = new ChatClient(
+    model: route.Model,                                         // e.g. "qwen3.7-plus", from ModelRouting
+    credential: new ApiKeyCredential(Environment.GetEnvironmentVariable("DASHSCOPE_API_KEY")!),
+    options: new OpenAIClientOptions
     {
-        Effort = Effort.Medium,                    // from ModelRouting
-        Format = new BetaJsonOutputFormat { Schema = StrictJsonSchema.For<T>() },
-    },
-    // Server-side refusal fallback for Opus 5.5 / Sonnet 5.5; omitted for Haiku.
-    Betas     = useFallback ? ["server-side-fallback-2026-07-01"] : null,
-    Fallbacks = useFallback ? (BetaFallbacksParam)new Default() : null,
+        Endpoint = new Uri(config["Llm:Endpoint"]!),             // https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+    });                                                         // or http://vllm:8000/v1 on-premise
+
+var options = new ChatCompletionOptions
+{
+    MaxOutputTokenCount = call.MaxTokens,
+    ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
+        jsonSchemaFormatName: typeof(T).Name,
+        jsonSchema: BinaryData.FromObjectAsJson(StrictJsonSchema.For<T>()),
+        jsonSchemaIsStrict: true),                              // json_schema + strict, as Model Studio documents
 };
-BetaMessage response = await client.Beta.Messages.Create(parameters, ct);
+
+ChatCompletion result = await chat.CompleteChatAsync(
+    [new SystemChatMessage(call.System), new UserChatMessage(call.User)], options, ct);
 ```
 
 Then:
-- `StopReason == "refusal"` → `LlmException` (only reached when no fallback applied).
-- `StopReason == "max_tokens"` → `LlmException` (truncated JSON is never parsed).
-- Text blocks are concatenated and deserialised into `T`.
-- Usage (input/output tokens), model and latency are logged per agent — this feeds the cost-per-document table.
+- `FinishReason == Length` → `LlmException` (truncated JSON is never parsed).
+- `FinishReason == ContentFilter`, or an API error → retry once, then the **fallback model** for that tier from config (`Fallbacks` in [models-and-cost.md](models-and-cost.md)).
+- The text is deserialised into `T`.
+- Usage (input/output tokens), model and latency are logged per agent; this feeds the cost-per-document table.
 
-Notes for this model generation:
-- No `temperature` / `top_p` / `budget_tokens`; thinking depth is controlled only by `Effort`. Claude Opus 5.5 defaults to `medium`, so it is set explicitly.
-- No assistant prefill; JSON shape comes from structured outputs.
-- `ANTHROPIC_API_KEY` is read by the SDK; never put it in config files.
+Notes for Qwen:
+- **Pick models that support `json_schema`:** `qwen4-max`, Qwen3.7-Plus, Qwen3.7/3.8-Flash, Qwen3.7/3.8-Max. **Not** Qwen3.6-Plus, Qwen3.5, or open-weight models via the API.
+- **Thinking mode + `json_schema`:** not clearly documented; test it on day one. If it fails, run agents in non-thinking mode.
+- **`tool_choice: "required"` is not supported** for Qwen. We use `auto` (default), so this doesn't affect us.
+- Schemas must avoid `multipleOf`, `uniqueItems`, `patternProperties` and similar keywords. `StrictJsonSchema` doesn't emit them.
+- `DASHSCOPE_API_KEY` is read from the environment; never put it in config files.
 
 **Strict schemas from C# records.** `StrictJsonSchema.For<T>()` uses `System.Text.Json.Schema.JsonSchemaExporter` and a transform that sets `additionalProperties: false` and marks every property required on every object. The C# record is the single source of truth for each agent's output.
 
@@ -136,12 +145,14 @@ The SSE endpoint polls the store every 300 ms and sends only `{seq, type, agent,
   "EventStore": "Postgres",                 // or "InMemory"
   "ConnectionStrings": { "Postgres": "Host=postgres;Database=specagent;Username=specagent;Password=…" },
   "Knowledge": { "Path": "knowledge" },
-  "ModelRouting": { "Default": { "Model": "claude-opus-5-5", "Effort": "medium" }, "Agents": { … } },
+  "Llm": { "Endpoint": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1" },
+  "ModelRouting": { "Default": { "Model": "qwen3.7-plus" }, "Agents": { … }, "Fallbacks": { … } },
+  "Qdrant": { "Url": "http://qdrant:6334", "Collection": "rules", "EmbeddingModel": "Qwen3-Embedding-0.6B" },
   "Patches": { "MinSeverity": "Critical", "MaxPatches": 8, "MaxRounds": 2, "Parallelism": 3 }
 }
 ```
 
-Every key can be overridden by environment variables (`ModelRouting__Agents__qa__Model=claude-sonnet-5-5`).
+Every key can be overridden by environment variables (`ModelRouting__Agents__qa__Model=qwen3.8-flash`).
 
 ## Docker Compose (planned)
 
@@ -151,7 +162,7 @@ services:
     build: { context: ., dockerfile: src/SpecAgent.Api/Dockerfile }
     ports: ["8080:8080"]
     environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
       EventStore: Postgres
       ConnectionStrings__Postgres: Host=postgres;Database=specagent;Username=specagent;Password=specagent
       Knowledge__Path: /app/knowledge
@@ -161,8 +172,10 @@ services:
     environment: { POSTGRES_DB: specagent, POSTGRES_USER: specagent, POSTGRES_PASSWORD: specagent }
     volumes: [pgdata:/var/lib/postgresql/data]
   qdrant:
-    image: qdrant/qdrant
-    profiles: [rag]
+    image: qdrant/qdrant                 # always on: every audit consults it
+  embeddings:
+    # local embedding model (Qwen3-Embedding) so ТЗ text never leaves for embedding;
+    # served e.g. by vLLM or Text Embeddings Inference
 volumes: { pgdata: {} }
 ```
 
@@ -181,4 +194,4 @@ A thin client over the same REST API: user sends a .docx/.pdf → bot `POST /api
 | Full pipeline with `FakeLlmClient` | Routing floor, 5 `FINDINGS` events, hallucinated quote rejected, headline defect patched |
 | Crash in Meta-Critic, then a fresh orchestrator | `RESUMED` written, critics not re-run, report produced |
 | Rules critic on the demo spec | Idempotency, PCI DSS, float money, vague words found offline |
-| Strict schema for `CriticOutput` | `additionalProperties: false`, enum values present — what Claude actually receives |
+| Strict schema for `CriticOutput` | `additionalProperties: false`, enum values present: what the model actually receives |

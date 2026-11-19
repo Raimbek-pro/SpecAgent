@@ -44,6 +44,7 @@ code{font-family:"SF Mono",Menlo,monospace;font-size:.88em;background:var(--soft
 table{border-collapse:collapse;width:100%}
 th{text-align:left;font-weight:600;color:var(--mute);font-size:20px;text-transform:uppercase;letter-spacing:.04em;padding:0 18px 12px 0;border-bottom:2px solid var(--ink)}
 td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:top;font-size:23px}
+.tight td{padding:9px 18px 9px 0;font-size:21px}
 .crop{border:1.5px solid var(--line);border-radius:12px;background:#fff;overflow:hidden}
 .crop svg{display:block;width:100%;height:100%}
 .flow{display:flex;align-items:center;gap:9px;flex-wrap:nowrap}
@@ -123,7 +124,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
   <p class="lead">Подход из инженерной статьи Anthropic о Managed Agents. Агент, у которого всё в одном процессе, при падении теряет работу, а секреты в нём лежат рядом с кодом модели.</p>
   <div class="body grid g3" style="margin-top:34px;align-items:start">
     <div class="card ses"><h2>Session · память</h2><p><b>Журнал событий</b>, только дописывается. Единственное состояние системы и готовый аудит-трейл.</p><p style="margin-top:14px;color:var(--mute)">У нас: PostgreSQL, таблица <code>audit_events</code></p></div>
-    <div class="card brn"><h2>Brain · мозг</h2><p><b>Агенты без состояния</b>. Любой воркер можно убить: новый вызывает <code>wake(sessionId)</code> и продолжает.</p><p style="margin-top:14px;color:var(--mute)">У нас: C#-оркестратор и 8 агентов на Claude</p></div>
+    <div class="card brn"><h2>Brain · мозг</h2><p><b>Агенты без состояния</b>. Любой воркер можно убить: новый вызывает <code>wake(sessionId)</code> и продолжает.</p><p style="margin-top:14px;color:var(--mute)">У нас: C#-оркестратор и 9 агентов на Qwen</p></div>
     <div class="card hnd"><h2>Hands · руки</h2><p><b>Инструменты за одной дверью</b> <code>execute(name, input)</code>. Секретов внутри нет.</p><p style="margin-top:14px;color:var(--mute)">У нас: чтение ТЗ, поиск по стандартам, рендер .docx</p></div>
   </div>
   <p style="margin-top:36px;font-size:26px"><b>«Cattle, not pets»</b>: воркеры заменяемы, их не «лечат» при падении.</p>
@@ -149,7 +150,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
       <span class="chip sec" style="background:var(--sec-bg);border-color:var(--sec)">Parser</span><span class="arrow">→</span>
       <span class="chip sec" style="background:var(--sec-bg);border-color:var(--sec)">PII Masker</span><span class="arrow">→</span>
       <span class="chip" style="background:var(--ses-bg);border-color:var(--ses)">Журнал (токены)</span><span class="arrow">→</span>
-      <span class="chip" style="background:var(--brn-bg);border-color:var(--brn)">Агенты + Claude</span><span class="arrow">→</span>
+      <span class="chip" style="background:var(--brn-bg);border-color:var(--brn)">Агенты + Qwen</span><span class="arrow">→</span>
       <span class="chip sec" style="background:var(--sec-bg);border-color:var(--sec)">Demasker</span><span class="arrow">→</span>
       <span class="chip" style="border-color:var(--line)">Отчёт</span>
     </div>
@@ -182,15 +183,16 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
 <!-- 7b -->
 <section class="slide">
   <div class="kicker t-brn">Brain · агенты</div>
-  <h1>Четыре уровня агентов, каждый проверяет предыдущий</h1>
+  <h1>Агенты по уровням: каждый проверяет предыдущий</h1>
   <div class="body">
-    <table>
+    <table class="tight">
       <tr><th style="width:24%">Агент</th><th>Что делает</th><th style="width:18%">Модель</th></tr>
-      <tr><td><b>Supervisor</b></td><td>Определяет домен ТЗ, решает, каких критиков и какие разделы запускать</td><td>Opus 5.5</td></tr>
-      <tr><td><b>4 критика</b></td><td>Параллельно, каждый в своём контексте: логика, QA, комплаенс (НБРК, PCI DSS), распределённые системы</td><td>Sonnet / Haiku 5.5</td></tr>
+      <tr><td><b>Supervisor</b></td><td>Определяет домен ТЗ, решает, каких критиков и какие разделы запускать</td><td>qwen4-max</td></tr>
+      <tr><td><b>4 критика</b></td><td>Параллельно, каждый в своём контексте: логика, QA, комплаенс (НБРК, PCI DSS), распределённые системы</td><td>qwen3.7-plus / flash</td></tr>
+      <tr><td><b>Checklist</b></td><td>Каждое обязательное правило из Qdrant: «где это в ТЗ?» Нет цитаты — значит, дефект</td><td>qwen3.7-flash</td></tr>
       <tr><td><b>Rules</b></td><td>Детерминированные проверки без ИИ: идемпотентность, CVV в логах, float для денег</td><td>код</td></tr>
-      <tr><td><b>Meta-Critic</b></td><td>Сверяет цитаты, склеивает дубли, отсеивает ложные срабатывания, ставит severity</td><td>Opus 5.5</td></tr>
-      <tr><td><b>Writer ⇄ Verifier</b></td><td>Пишет правку и Gherkin; проверяющий сверяет с соседними разделами, до 2 раундов</td><td>Sonnet → Opus</td></tr>
+      <tr><td><b>Meta-Critic</b></td><td>Сверяет цитаты, склеивает дубли, отсеивает ложные срабатывания, ставит severity</td><td>qwen4-max</td></tr>
+      <tr><td><b>Writer ⇄ Verifier</b></td><td>Пишет правку и Gherkin; проверяющий сверяет с соседними разделами, до 2 раундов</td><td>plus → max</td></tr>
     </table>
   </div>
   <div class="foot"><span>Новый критик: это промпт и строка конфига, граф не меняется</span><span>8</span></div>
@@ -234,6 +236,32 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
   <div class="foot"><span>SpecAgent</span><span>10</span></div>
 </section>
 
+<!-- 9b -->
+<section class="slide">
+  <div class="kicker t-hnd">Знания · Qdrant на каждом аудите</div>
+  <h1>Правила приходят к агенту сами, а не когда он вспомнит</h1>
+  <div class="body grid g2">
+    <div>
+      <div class="steps" style="grid-template-columns:1fr">
+        <div class="step" style="border-color:var(--hnd);background:var(--hnd-bg)"><div class="n">1 · сразу после загрузки</div><div class="t">Каждый раздел → топ-5 правил из Qdrant</div><div class="e">критик получает разделы вместе с правилами</div></div>
+        <div class="step" style="border-color:var(--hnd);background:var(--hnd-bg)"><div class="n">2 · параллельно с критиками</div><div class="t">Чек-лист: все обязательные правила домена</div><div class="e">«где это в ТЗ?» — нет цитаты, значит дефект</div></div>
+        <div class="step" style="border-color:var(--hnd);background:var(--hnd-bg)"><div class="n">3 · у арбитра</div><div class="t">Ссылка на стандарт проверяется по базе</div><div class="e">несуществующий пункт помечается кодом</div></div>
+      </div>
+    </div>
+    <div>
+      <h2>Это замедлит аудит?</h2>
+      <table>
+        <tr><th>Работа</th><th>Цена по времени</th></tr>
+        <tr><td>Эмбеддинги ~40 разделов</td><td>0,5–3 с, параллельно с Supervisor</td></tr>
+        <tr><td>Поиск в Qdrant</td><td>миллисекунды</td></tr>
+        <tr><td>Чек-лист</td><td>несколько секунд, параллельно с критиками</td></tr>
+      </table>
+      <p style="margin-top:20px"><b>Итого ≈ 0–3 с</b> <span style="color:var(--mute)">к аудиту в десятки секунд. Оценка; заменим замерами.</span></p>
+    </div>
+  </div>
+  <div class="foot"><span>База: PCI DSS, НБРК / АРРФР, стандарт ТЗ, политики БЦК. Само ТЗ в Qdrant не хранится.</span><span>11</span></div>
+</section>
+
 <!-- 10 -->
 <section class="slide">
   <div class="kicker">Доверие</div>
@@ -249,7 +277,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
       <tr><td>Правка ломает соседний раздел</td><td>Verifier сверяет с соседями, до 2 раундов</td><td>ИИ, в журнале</td></tr>
     </table>
   </div>
-  <div class="foot"><span>SpecAgent</span><span>11</span></div>
+  <div class="foot"><span>SpecAgent</span><span>12</span></div>
 </section>
 
 <!-- 11 -->
@@ -267,7 +295,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
     <div class="step" style="border-color:var(--hnd);background:var(--hnd-bg)"><div class="n">8</div><div class="t">Правки и .docx</div><div class="e">PATCHES · REPORT_RENDERED</div></div>
     <div class="step" style="border-color:var(--sec);background:var(--sec-bg)"><div class="n">9</div><div class="t">Демаскирование и выдача</div><div class="e">DELIVERED</div></div>
   </div>
-  <div class="foot"><span>Цвет шага = слой на схеме</span><span>12</span></div>
+  <div class="foot"><span>Цвет шага = слой на схеме</span><span>13</span></div>
 </section>
 
 <!-- 12 -->
@@ -278,23 +306,24 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
     <table>
       <tr><th>Слой</th><th>Выбор</th></tr>
       <tr><td>Backend</td><td>C# / .NET 10, ASP.NET Core</td></tr>
-      <tr><td>ИИ</td><td>Claude через официальный Anthropic C# SDK</td></tr>
+      <tr><td>ИИ</td><td>Qwen: Alibaba Cloud или свои серверы (open weights)</td></tr>
       <tr><td>Журнал</td><td>PostgreSQL, append-only</td></tr>
-      <tr><td>Знания</td><td>PCI DSS, НБРК, стандарт ТЗ → Qdrant</td></tr>
+      <tr><td>Знания</td><td>Qdrant на каждом аудите, локальные эмбеддинги Qwen3</td></tr>
       <tr><td>Интерфейс</td><td>Split screen + Telegram-бот</td></tr>
       <tr><td>Запуск</td><td><code>docker compose up</code></td></tr>
     </table>
     <div>
       <h2>Маршрутизация моделей</h2>
       <ul class="dots">
-        <li><b>Opus 5.5</b>: решения (маршрутизация, арбитр, проверка правок)</li>
-        <li><b>Sonnet 5.5</b>: внимательное чтение (критики, правки)</li>
-        <li><b>Haiku 5.5</b>: рутина (размытые формулировки)</li>
+        <li><b>qwen4-max</b>: решения (маршрутизация, арбитр, проверка правок)</li>
+        <li><b>qwen3.7-plus</b>: внимательное чтение (критики, правки)</li>
+        <li><b>qwen3.7-flash</b>: рутина и чек-лист</li>
       </ul>
-      <p style="margin-top:22px;color:var(--mute)">Модели меняются в конфиге, без кода. Сравниваем с простым вариантом «одна модель на всё» и берём то, что дешевле <b>за найденный дефект</b>.</p>
+      <p style="margin-top:18px"><b>≈ $0.19 за одно ТЗ</b> <span style="color:var(--mute)">против ≈ $0.30–0.57 на сопоставимых моделях Gemini (прайс-листы на 19.11.2026, оценка).</span></p>
+      <p style="margin-top:12px;color:var(--mute)">Open weights (Apache 2.0): банк может запустить те же модели у себя, тогда текст ТЗ не покидает банк.</p>
     </div>
   </div>
-  <div class="foot"><span>SpecAgent</span><span>13</span></div>
+  <div class="foot"><span>SpecAgent</span><span>14</span></div>
 </section>
 
 <!-- 13 -->
@@ -318,7 +347,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
       <p style="margin-top:24px">Сравниваем три варианта: только правила, один промпт и полный SpecAgent. <span style="color:var(--mute)">Цифры появятся после прогона на датасете; здесь мы их не придумываем.</span></p>
     </div>
   </div>
-  <div class="foot"><span>Демо-ТЗ: P2P-переводы по номеру телефона, 10 внесённых дефектов</span><span>14</span></div>
+  <div class="foot"><span>Демо-ТЗ: P2P-переводы по номеру телефона, 10 внесённых дефектов</span><span>15</span></div>
 </section>
 
 <!-- 14 -->
@@ -332,7 +361,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
         <li><span class="tag ok">готово</span>Парсинг, маскирование, все агенты, журнал, wake()</li>
         <li><span class="tag ok">проходят</span>11 тестов, включая «падение и продолжение»</li>
         <li><span class="tag ok">проверено</span>Без ключа API находит оба Blocker демо-ТЗ правилами</li>
-        <li><span class="tag todo">дальше</span>Реальные вызовы Claude, Postgres, Docker, бот</li>
+        <li><span class="tag todo">дальше</span>Клиент Qwen, Qdrant и чек-лист, Postgres, Docker, бот</li>
       </ul>
     </div>
     <table>
@@ -344,7 +373,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
       <tr><td><b>4 декабря</b></td><td>Grand Final, MNU, Астана</td></tr>
     </table>
   </div>
-  <div class="foot"><span>Номинации: Best Architecture · Best Business Value · Best Presentation</span><span>15</span></div>
+  <div class="foot"><span>Номинации: Best Architecture · Best Business Value · Best Presentation</span><span>16</span></div>
 </section>
 
 <!-- 15 -->

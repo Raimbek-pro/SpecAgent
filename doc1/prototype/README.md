@@ -4,6 +4,7 @@
 
 | | |
 |---|---|
+| **Model provider** | The design now targets **Qwen** ([models-and-cost.md](../models-and-cost.md)). This prototype still calls **Claude** through `ClaudeLlmClient`; switching means replacing that one class with a Qwen client. Per-section Qdrant matching and the checklist pass are also not built yet. |
 | Status | Builds; 11/11 tests pass; smoke-tested locally without an API key (deterministic path only) |
 | **Not yet tested** | Real Claude calls (no API key used), PostgreSQL event store, `.docx` / `.pdf` parsing on real bank documents |
 | Not included | Dockerfile / Docker Compose, Telegram bot, Qdrant, `.docx` export of patches |

@@ -87,25 +87,25 @@ sequenceDiagram
 | One critic | `CRITIC_FAILED` + empty `FINDINGS`; others continue |
 | Meta-Critic | Deterministic merge by section + quote |
 | Patch writer/verifier | That patch is skipped; report still ships |
-| Model refusal | Server-side fallback model answers in the same call (Opus 5.5 / Sonnet 5.5); otherwise treated as a failure above |
+| Model refusal or error | Retry once, then the configured fallback model for that tier (e.g. `qwen3.7-plus` → `qwen3.8-flash`); otherwise treated as a failure above |
 
 ## Model routing and cost
 
-Strong reasoning where decisions are made (Supervisor, Meta-Critic, Verifier: Claude Opus 5.5), mid-tier for detailed reading (logic, compliance, distributed, writer: Claude Sonnet 5.5), cheapest for pattern work (QA checker: Claude Haiku 5.5). On the pitch this is the **cost-per-document** argument. Everything is configurable per agent:
+Strong reasoning where decisions are made (Supervisor, Meta-Critic, Verifier: `qwen4-max`), mid-tier for detailed reading (logic, compliance, distributed, writer: `qwen3.7-plus`), cheapest for pattern work and the checklist pass (`qwen3.7-flash`). On the pitch this is the **cost-per-document** argument: about **$0.19 per ТЗ** on Qwen list prices, against about $0.30–0.57 on comparable Gemini models. The full table is in [models-and-cost.md](models-and-cost.md). Everything is configurable per agent:
 
 ```json
 "ModelRouting": {
-  "Default": { "Model": "claude-opus-5-5", "Effort": "medium" },
+  "Default": { "Model": "qwen3.7-plus" },
   "Agents": {
-    "supervisor":  { "Model": "claude-opus-5-5",   "Effort": "medium" },
-    "qa":          { "Model": "claude-haiku-5-5",  "Effort": "low" },
-    "distributed": { "Model": "claude-sonnet-5-5", "Effort": "high" },
-    "meta-critic": { "Model": "claude-opus-5-5",   "Effort": "high" }
+    "supervisor":  { "Model": "qwen4-max" },
+    "qa":          { "Model": "qwen3.7-flash" },
+    "distributed": { "Model": "qwen3.7-plus" },
+    "meta-critic": { "Model": "qwen4-max" }
   }
 }
 ```
 
-Before committing to a multi-model cascade, measure the simpler option too: Claude Opus 5.5 at lower effort for every agent. Pick by cost per *correct* finding on the benchmark, not per request.
+Before committing to a multi-model cascade, measure the simpler option too: `qwen4-max` for every agent. Pick by cost per *correct* finding on the benchmark, not per request.
 
 ## Making the agents visible (demo)
 

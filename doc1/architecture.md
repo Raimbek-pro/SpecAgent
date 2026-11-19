@@ -4,6 +4,7 @@
 > - SpecAgent has three layers: **Session** (a durable log), **Brain** (stateless agents) and **Hands** (tools behind one interface). The split follows Anthropic's [*Scaling Managed Agents: Decoupling the brain from the hands*](https://www.anthropic.com/research/managed-agents).
 > - A **security perimeter** wraps all three. Real customer data enters through the masker and leaves only through the demasker.
 > - Any agent worker can crash. A fresh one reads the log and carries on from the last event.
+> - Models: **Qwen** (`qwen4-max`, `qwen3.7-plus`, `qwen3.7-flash`); see [models-and-cost.md](models-and-cost.md). **Every agent's input is backed by Qdrant**: rules are matched to each section automatically, not only when an agent thinks to ask.
 
 ---
 
@@ -40,7 +41,7 @@ Their answer, which we adopt:
 | Layer | What it is | Rule |
 |---|---|---|
 | **Session** | Append-only log of everything that happened | It is the only state. It lives outside the brain and the hands. |
-| **Brain** | The loop that calls Claude and routes tool calls: our orchestrator and agents | Stateless and replaceable. "Cattle, not pets." |
+| **Brain** | The loop that calls the model (Qwen) and routes tool calls: our orchestrator and agents | Stateless and replaceable. "Cattle, not pets." |
 | **Hands** | Tools that act: read a section, search the standards, render a .docx | One interface, `execute(name, input) → string`. No credentials inside. |
 
 ---
@@ -84,6 +85,7 @@ Operations, using the article's names:
 | Orchestrator | `wake(sessionId)`: rebuilds state from the log and runs the next stage that has no event yet |
 | Supervisor | Classifies the ТЗ and decides which critics read which sections |
 | Critic Registry | Pluggable critics with one interface, `review(tz_slice) → Finding[]`. They run **in parallel**. |
+| Checklist Pass *(added beyond the diagram)* | For every **mandatory** rule of the ТЗ's domain, asks "where does the ТЗ cover this?" and needs a verified quote, or reports a gap |
 | Meta-Critic Judge | **Merge** duplicates (non-destructively), **ground** every quote in the original ТЗ, **score** severity |
 | Patch Writer ⇄ Verifier | Writes a fix; the verifier checks it against neighbouring sections; at most N rounds |
 
@@ -96,9 +98,34 @@ Four critics ship by default: Logic & Cross-Ref, QA & Ambiguity, Compliance (Н�
 | `execute(name, input) → result \| ToolError` | The single door to every tool. A failing tool returns an error *value*; the session survives. |
 | MCP Proxy | Fetches credentials from the vault and calls the external service. The model never sees a credential. |
 | `tz.read_span` | Exact text of a section, used for grounding quotes |
-| `rag.search` | Search over standards and regulations in Qdrant |
+| `rag.search` | Search over standards and regulations in Qdrant, called **automatically for every routed section** (see below) |
 | `docx.render` | Renders the report in a sandbox, started only when needed |
 | Secrets Vault | Credentials for tools, outside the model's context |
+
+### Knowledge: Qdrant on every step
+
+Earlier, a critic searched the knowledge base only for what it *thought* to ask, so anything it didn't think of was never looked up. Now **code** consults Qdrant at every step, and the agents receive the rules already attached:
+
+| When | What is searched | What it feeds |
+|---|---|---|
+| Right after upload, in parallel with the Supervisor | Every section's text is embedded (`Qwen3-Embedding`, local) and matched to the top 5 rules | Each critic gets **its sections plus the rules matched to those sections** |
+| Checklist pass | All rules tagged **mandatory** for the ТЗ's domain (a filter, not a similarity search) | One "covered / not covered" check per rule |
+| Meta-Critic | Each finding's `StandardRef` is looked up by id | A cited rule that doesn't exist in the base is flagged (code) |
+| Patch Writer | Rules matched to the defect | The fix is worded the way the standard is |
+
+What's stored: **reference rules only** (PCI DSS summaries, НБРК / АРРФР, ТЗ-writing standard, БЦК policies), one rule per entry, with source and domain tags. The ТЗ itself is never stored there; it's always read exactly through `tz.read_span`.
+
+**Does it slow the audit down?** Barely, if the work runs in parallel. These are estimates to replace with measured numbers:
+
+| Extra work | Typical cost | Why it barely shows |
+|---|---|---|
+| Embedding ~40 sections with a local model | ~0.5–3 s on CPU, well under 1 s on a GPU | Runs **in parallel with the Supervisor's model call** (a few seconds anyway) |
+| Qdrant searches | milliseconds each | Negligible against model calls that take seconds |
+| ~3K more prompt tokens per critic | a fraction of a second of extra reading | Models read input fast; generating output is what takes time |
+| Checklist pass (~40 small `qwen3.7-flash` calls) | a few seconds in total | Runs **in parallel with the critics**, so the wait is whichever finishes last |
+| Extra cost | under $0.01 per ТЗ with `qwen3.7-flash` | Included in [models-and-cost.md](models-and-cost.md) |
+
+Net effect: roughly **0–3 seconds** on an audit that takes tens of seconds, in exchange for fewer missed defects and correct citations. Run in sequence instead of in parallel, the same work could add 5–10 seconds, so the parallelism matters.
 
 ### Eval & Ablation (grey, offline)
 
@@ -117,8 +144,8 @@ The article makes this point too: a workaround needed by one model generation ca
 |---|---|---|---|
 | 1 | Analyst uploads the ТЗ; it is parsed and masked | Perimeter | `TZ_INGESTED` |
 | 2 | Orchestrator starts session `s-42` | Brain | `RUN_STARTED` |
-| 3 | Supervisor routes sections to critics | Brain | `ROUTED` |
-| 4 | Four critics run in parallel, calling tools only through `execute()` | Brain → Hands | `FINDINGS` × 4 |
+| 3 | Supervisor routes sections to critics; *at the same time* every section is matched to rules in Qdrant | Brain → Hands | `ROUTED`, `RULES_MATCHED` |
+| 4 | Four critics run in parallel, each with its sections plus their matched rules; the checklist pass runs alongside | Brain → Hands | `FINDINGS` (one per critic + checklist) |
 | 5 | *A worker crashes mid-merge* | — | *(nothing: no event is lost)* |
 | 6 | A fresh worker calls `wake(s-42)` and continues from the last event; critics are **not** re-run | Brain | `RESUMED` |
 | 7 | Judge merges (with links), grounds every quote, scores | Brain → Hands | `MERGED`, `GROUNDED`, `SCORED` |
@@ -152,7 +179,9 @@ The prototype uses slightly coarser event names (`JUDGED` covers merge, ground a
 | Orchestrator with `wake()`, Supervisor, 4 critics, Judge, Patch loop | ✅ tested with a scripted model |
 | Extra deterministic "rules" critic | ✅ added beyond the diagram |
 | `execute()` gateway, `tz.read_span` | ✅ |
-| `rag.search` | ➖ keyword search over Markdown; Qdrant planned |
+| `rag.search` | ➖ keyword search over Markdown, one fixed query per critic; Qdrant with per-section matching planned |
+| Checklist Pass | ❌ not yet |
+| LLM client | ➖ Claude client built; **Qwen client not yet** (one class to swap, see [models-and-cost.md](models-and-cost.md)) |
 | MCP Proxy, Secrets Vault, `docx.render` sandbox | ❌ not yet |
 | Golden set | ➖ one labelled demo ТЗ |
 | Ablation runner | ❌ not yet |

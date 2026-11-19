@@ -52,6 +52,7 @@ Storage: PostgreSQL table `audit_events (session_id, seq)` primary key, `payload
 |---|---|---|---|
 | `TZ_INGESTED` | ingestion | `IngestedPayload(TzDocument masked, int PiiTokens)` | everyone (the document) |
 | `RUN_STARTED` / `RESUMED` | orchestrator | — | UI, resume logic |
+| `RULES_MATCHED` | knowledge step | `{ sectionId → rule ids }` from Qdrant | critics, patch writer |
 | `ROUTED` | supervisor | `RoutingDecision(Domain, Complexity, Routes, Rationale, ForcedByRules)` | orchestrator → critics |
 | `CRITIC_STARTED` | critic | — | UI |
 | `TOOL_CALLED` | tool gateway | `{ tool, args }` | audit trail |

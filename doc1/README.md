@@ -35,14 +35,15 @@
 | Start with | |
 |---|---|
 | **[Architecture](architecture.md)** | The diagram, the three layers (Session / Brain / Hands), one audit step by step |
-| **[Presentation (PDF)](presentation/SpecAgent-architecture.pdf)** | The same story as 16 slides, in Russian, for the jury (source: [slides.html](presentation/slides.html)) |
+| **[Presentation (PDF)](presentation/SpecAgent-architecture.pdf)** | The same story as 17 slides, in Russian, for the jury (source: [slides.html](presentation/slides.html)) |
 
 | Go deeper | |
 |---|---|
 | [Agents](agents.md) | Each agent: its job, what it reads, what it returns, what happens when it fails |
 | [Multi-agent orchestration](multi-agent-orchestration.md) | Routing, parallel critics, the judge, the fix loop, crash recovery, model choice |
 | [Cross-agent protocol](cross-agent-protocol.md) | How agents pass work through the log; event types; conflict resolution |
-| [C# backend](backend-csharp.md) | .NET solution, key classes, Claude SDK usage, API endpoints, configuration |
+| [Models & cost](models-and-cost.md) | Qwen vs Gemini prices, cost per audit, whether Qwen fits our agents, self-hosting |
+| [C# backend](backend-csharp.md) | .NET solution, key classes, Qwen client, API endpoints, configuration |
 | [PII & security](pii-and-security.md) | What gets masked and how; prompt-injection defence; anti-hallucination controls |
 | [Evaluation & demo](evaluation-and-demo.md) | Test dataset, metrics, demo script, hackathon timeline and deliverables |
 | [⚠️ Prototype code](prototype/README.md) | Working C# prototype: what runs today and what has not been tested |
@@ -54,9 +55,9 @@
 | Layer | Choice |
 |---|---|
 | Backend | C# / .NET 10, ASP.NET Core |
-| AI | Claude via the official Anthropic C# SDK: Opus 5.5 for decisions, Sonnet 5.5 for critics, Haiku 5.5 for routine checks |
+| AI | **Qwen**: `qwen4-max` for decisions, `qwen3.7-plus` for critics, `qwen3.7-flash` for routine checks (≈ $0.19 per ТЗ); self-hostable open weights |
 | State | PostgreSQL append-only event log |
-| Knowledge | Markdown checklists (PCI DSS, НБРК, ТЗ standard) → Qdrant |
+| Knowledge | Qdrant, consulted on every audit: rules matched to every section, plus a mandatory-rule checklist; local `Qwen3-Embedding` |
 | UI | Split screen: ТЗ on the left, live agent trace and findings on the right |
 | Run | `docker compose up` *(planned)* |
 

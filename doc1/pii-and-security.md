@@ -14,7 +14,7 @@ flowchart LR
     U[Uploaded ТЗ<br/>real data] --> P[Parser] --> M[PiiMasker]
     M -->|value| V[(PII vault)]
     M -->|masked text| L[(Event log)]
-    L --> A[Agents + Claude]
+    L --> A[Agents + Qwen]
     A --> L
     L --> D[Demasker] --> R[Report for analyst<br/>real data]
     V --> D
@@ -62,7 +62,8 @@ A ТЗ is a document written by someone else; it can contain "ignore previous in
 ## Data residency and model access
 
 - Only masked text leaves the bank perimeter.
-- For production, the Claude API can be reached through the bank's chosen cloud platform (Amazon Bedrock, Google Cloud Vertex AI, Microsoft Foundry) with the matching client in the C# SDK; the `ILlmClient` interface doesn't change.
+- For production, run **open-weight Qwen on the bank's own servers** (Apache 2.0, served by vLLM) so no text leaves the bank at all. The same `ILlmClient` talks to Alibaba Cloud or the on-premise server; only the endpoint changes. See [models-and-cost.md](models-and-cost.md).
+- Embeddings for Qdrant are computed by a **local** model (`Qwen3-Embedding`), and Qdrant runs in our own container, so knowledge-base searches send nothing outside.
 - Usage, model and latency per agent are logged, which supports both cost reporting and audit.
 
 ## Anti-hallucination summary
