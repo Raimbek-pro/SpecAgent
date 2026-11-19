@@ -10,18 +10,34 @@
 
 ## The diagram
 
+### v2: overview
+
 ![SpecAgent architecture v2 — Session / Brain / Hands](diagrams/architecture.svg)
 
 [Open full size (SVG)](diagrams/architecture.svg) · [PlantUML source](diagrams/architecture.puml)
 
-**Two labels differ from our stack.** The diagram was drawn before we chose C#:
+The overview: the three layers, the security perimeter and the main flow. Still valid. Two labels predate our stack: "FastAPI" (we use ASP.NET Core) and "LangGraph workers" (we use a C# orchestrator).
 
-| On the diagram | In our implementation |
+
+### v3: extended version
+
+![SpecAgent architecture v3 — Session / Brain / Hands with C#, Qwen and Qdrant](diagrams/architecture-v3.svg)
+
+[Open full size (SVG)](diagrams/architecture-v3.svg) · [PlantUML source](diagrams/architecture-v3.puml)
+
+Same structure as v2, with every box opened up. It adds:
+
+| Added in v3 | Why |
 |---|---|
-| Security Perimeter **(FastAPI)** | ASP.NET Core minimal API (.NET 10) |
-| Brain — Stateless Harness **(LangGraph workers)** | C# `AuditWorker` + `AuditOrchestrator` |
-
-Everything else on the diagram applies as drawn.
+| Detailed contents of every agent (what it checks, which model, what it returns) | One picture explains the whole pipeline |
+| **Meta-Critic as three numbered steps:** grounding (code) → merge & conflicts (`qwen4-max`) → score (formula) | Shows which parts are deterministic |
+| **Self-Verification Loop:** Writer → code pre-check → Verifier, return arrows, **max 2 rounds**, "not verified" label | The loop always ends; a failed fix is labelled, never hidden |
+| **Rules critic** (code) and **Checklist Pass** (mandatory rules from Qdrant) in the Critic Registry | Floor under the AI critics, and no "nobody noticed" gap |
+| **Knowledge Matcher + local Qwen3-Embedding → Qdrant**, running in parallel with the Supervisor (`RULES_MATCHED`) | Qdrant is consulted on every audit |
+| **LLM Gateway:** `QwenLlmClient` with strict JSON schema and fallback, Alibaba Cloud *or* self-hosted vLLM | One interface; production can run inside the bank |
+| ASP.NET Core instead of FastAPI; C# worker instead of LangGraph | Our actual stack |
+| Telegram bot, SSE live trace, `@agent` questions | Second entry point and visible agents |
+| ✓ / ○ on every box | Honest status: built in the prototype vs planned |
 
 ---
 

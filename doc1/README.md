@@ -6,6 +6,8 @@
 
 ![Architecture v2 — Session / Brain / Hands](diagrams/architecture.svg)
 
+*Overview (v2). Extended version with every component, models and status: [architecture-v3.svg](diagrams/architecture-v3.svg).*
+
 ---
 
 ## What it does
@@ -35,7 +37,7 @@
 | Start with | |
 |---|---|
 | **[Architecture](architecture.md)** | The diagram, the three layers (Session / Brain / Hands), one audit step by step |
-| **[Presentation (PDF)](presentation/SpecAgent-architecture.pdf)** | The same story as 17 slides, in Russian, for the jury (source: [slides.html](presentation/slides.html)) |
+| **[Presentation (PDF)](presentation/SpecAgent-architecture.pdf)** | The same story as 18 slides, in Russian, for the jury (source: [slides.html](presentation/slides.html)) |
 
 | Go deeper | |
 |---|---|

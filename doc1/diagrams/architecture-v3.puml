@@ -1,0 +1,374 @@
+@startuml tz_auditor_architecture_v3
+' BCC-HUB FinTech TZ Auditor — v3
+' v2 (Session / Brain / Hands, "Managed Agents" principles)
+' + detailed agent descriptions (critics, Meta-Critic, self-verification loop)
+' + what SpecAgent actually uses: C# / .NET 10, Qwen, always-on Qdrant,
+'   checklist pass, rules critic, live trace, Telegram bot, @agent questions.
+' Status marks:  ✓ = in the C# prototype   ○ = planned
+title BCC-HUB FinTech TZ Auditor — Multi-Agent Architecture v3\n(Session / Brain / Hands · C# + Qwen + Qdrant)
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontName Arial
+skinparam defaultFontSize 13
+skinparam ArrowColor #444444
+skinparam roundcorner 8
+skinparam package {
+  BorderColor #555555
+  FontStyle bold
+}
+skinparam database {
+  BackgroundColor #F4F4F4
+}
+skinparam component {
+  BackgroundColor #FFFFFF
+}
+left to right direction
+
+actor "Аналитик" as Analyst
+
+' ───────────────────────── Security perimeter ─────────────────────────
+package "Security Perimeter — ASP.NET Core (.NET 10)" as SEC #FDECEC {
+  component UI [
+    <b>Web UI</b>  ✓
+    --
+    • Split-screen: ТЗ слева, замечания справа
+    • Live Trace агентов (SSE из журнала)
+    • «Почему арбитр оставил» + @agent вопросы
+  ]
+  component Bot [
+    <b>Telegram-бот</b>  ○
+    --
+    • Тот же REST API
+    • Отчёт: score + Blocker/Critical
+  ]
+  component GW [
+    <b>API Gateway</b>  ○
+    --
+    • AuthN/Z, rate limit
+  ]
+  component Parser [
+    <b>Document Parser</b>  ✓
+    --
+    • .docx (OpenXML), .pdf (PdfPig), .md
+    • Нумерованные разделы: «4.3» = свой id
+    • Таблицы → Markdown
+  ]
+  component Masker [
+    <b>PII Masker</b>  ✓
+    --
+    • ИИН (mod 11), карта (Луна), IBAN KZ,
+      телефон, e-mail, IP, ключи
+    • Одно значение = один токен [IIN_1]
+  ]
+  component Demasker [
+    <b>Demasker</b>  ✓
+    --
+    • Единственная точка выхода PII
+  ]
+  database "PII Vault  ✓\n(token ↔ value;\nв прототипе in-memory,\nв проде KMS)" as PIIVault
+}
+
+' ───────────────────────── Session (state) ─────────────────────────
+package "Session Layer — durable state" as SESS #E8F1FB {
+  database "Session Event Log  ✓\n(append-only, PostgreSQL)\n—\nemitEvent → AppendAsync\ngetEvents → ReadAsync(afterSeq)\ngetSession → AuditState.From(log)" as Log
+  database "Artifacts Store  ○\n(обезличенное ТЗ, сырые\nfindings JSON, патчи, .docx;\nсейчас — в payload событий)" as Artifacts
+}
+
+' ───────────────────────── Brain (harness) ─────────────────────────
+package "Brain — Stateless Harness (C# AuditWorker + AuditOrchestrator)" as BRAIN #FFF8E1 {
+  component Orch [
+    <b>Orchestrator</b>  ✓
+    --
+    • RunAsync(session) = start И wake(session)
+    • Пропускает этапы, у которых уже есть событие
+    • При старте будит все незавершённые сессии
+  ]
+  component Sup [
+    <b>Supervisor</b>  ✓   <i>qwen4-max</i>
+    --
+    • Домен ТЗ (P2P / шлюз / CRM) и сложность
+    • Нарезка разделов по критикам
+    • Правило-пол: платежи/ПДн → Compliance
+      и Distributed всегда
+  ]
+
+  package "Critic Registry (pluggable) — parallel, isolated contexts" as REG #FFFDF2 {
+    interface "Critic\nreview(slice + rules) → RawFinding[]" as ICritic
+    component C1 [
+      <b>Logic & Cross-Ref</b>  ✓  <i>qwen3.7-plus</i>
+      --
+      • DECLINED vs REJECTED, state machine
+      • API-контракты, Decimal vs float
+      --
+      <i>Out: logic-n (JSON)</i>
+    ]
+    component C2 [
+      <b>QA & Ambiguity</b>  ✓  <i>qwen3.7-flash</i>
+      --
+      • «быстро», «удобно» без метрик
+      • Gherkin, негативные кейсы, SLA
+      --
+      <i>Out: qa-n (JSON)</i>
+    ]
+    component C3 [
+      <b>Compliance & Security</b>  ✓  <i>qwen3.7-plus</i>
+      --
+      • PAN/CVV в логах, ПДн, RBAC, IDOR
+      • KYC/AML, лимиты, 3DS; НБРК / PCI DSS
+      --
+      <i>Out: compliance-n (JSON)</i>
+    ]
+    component C4 [
+      <b>Distributed Systems</b>  ✓  <i>qwen3.7-plus</i>
+      --
+      • Idempotency-Key, таймауты, ретраи
+      • Saga / rollback, гонки, сверка
+      --
+      <i>Out: distributed-n (JSON)</i>
+    ]
+    component CRules [
+      <b>Rules</b>  ✓   <i>код, без ИИ</i>
+      --
+      • Идемпотентность, таймауты, CVV в логах,
+        float для денег, размытые слова
+      • Тот же ответ при каждом запуске
+    ]
+    component CCheck [
+      <b>Checklist Pass</b>  ○  <i>qwen3.7-flash</i>
+      --
+      • Все ОБЯЗАТЕЛЬНЫЕ правила домена из Qdrant
+      • «Где это в ТЗ?» → цитата или дефект
+    ]
+    component Cn [
+      <b>+ новые критики</b>
+      --
+      • промпт + строка конфига,
+        граф не меняется
+    ]
+  }
+
+  package "Meta-Critic Judge" as JUDGE #F3E8F7 {
+    component Ground [
+      <b>1. Grounding Check</b>  ✓  <i>код</i>
+      --
+      • Цитата дословно ∈ исходное ТЗ?
+      • Не та секция → исправить указатель
+      • Нет нигде → отбросить (галлюцинация)
+    ]
+    component Merge [
+      <b>2. Merge & Conflict Resolution</b>  ✓  <i>qwen4-max</i>
+      --
+      • Склейка дублей от разных критиков
+      • Отсев false positives (видит ВСЁ ТЗ)
+      • Компромисс: Security vs UX
+      • Неразрушающе: ссылки на сырые findings
+      • Не упомянутое арбитром — сохраняется
+    ]
+    component Sev [
+      <b>3. Severity & Quality Score</b>  ✓  <i>код</i>
+      --
+      • Blocker / Critical / Major / Minor
+      • Score = 100 − 15·B − 8·C − 4·M − 1·m
+      • Ссылки на стандарт сверяются с базой  ○
+    ]
+  }
+
+  package "Self-Verification Loop" as LOOP #E9F7EC {
+    component Writer [
+      <b>Patch Writer</b>  ✓  <i>qwen3.7-plus</i>
+      --
+      • «Было → Стало» для Critical+
+      • Таблицы ошибок, Gherkin (Given/When/Then)
+    ]
+    component PreCheck [
+      <b>Pre-check</b>  ✓  <i>код</i>
+      --
+      • Пусто или без изменений →
+        назад, без вызова Verifier
+    ]
+    component Verifier [
+      <b>Patch Verifier</b>  ✓  <i>qwen4-max</i>
+      --
+      • Дефект закрыт?
+      • Нет противоречий с соседними пп.?
+      • Нет новых дефектов, ничего не потеряно?
+      --
+      <i>≤ 2 раундов; не прошло → «не проверено»</i>
+      <i>+ замечания Verifier</i>
+    ]
+  }
+
+  component Ask [
+    <b>@agent вопрос</b>  ✓
+    --
+    • «@compliance проверь 4.1 на IDOR»
+    • Один критик, один раздел
+  ]
+}
+
+' ───────────────────────── LLM gateway ─────────────────────────
+package "LLM Gateway — ILlmClient" as LLM #FFF3E0 {
+  component QwenClient [
+    <b>QwenLlmClient</b>  ○   <i>(в прототипе: ClaudeLlmClient ✓)</i>
+    --
+    • OpenAI-compatible API, json_schema strict
+    • Схема из C#-record → ответ = контракт
+    • Роутинг: max / plus / flash по агенту
+    • Ретрай → fallback-модель того же уровня
+  ]
+  cloud "Alibaba Model Studio\n(qwen4-max, qwen3.7-plus,\nqwen3.7-flash)" as Cloud
+  node "Self-hosted Qwen (vLLM)\nopen weights, Apache 2.0\nтекст не покидает банк" as OnPrem
+}
+
+' ───────────────────────── Hands (tools) ─────────────────────────
+package "Hands — Tool Gateway" as HANDS #E9F7EC {
+  interface "execute(name, input)\n→ result | ToolError" as Exec
+  component Matcher [
+    <b>Knowledge Matcher</b>  ○
+    --
+    • Каждый раздел → топ-5 правил
+    • Сразу после загрузки, параллельно
+      с Supervisor → RULES_MATCHED
+  ]
+  component MCP [
+    <b>MCP Proxy</b>  ○
+    --
+    • Креды из Vault, вне контекста LLM
+  ]
+  component TRag [
+    <b>rag.search</b>  ✓/○
+    --
+    • сейчас: ключевые слова по .md
+    • цель: Qdrant по смыслу
+  ]
+  component TSpan [
+    <b>tz.read_span / tz.search</b>  ✓
+    --
+    • точный текст раздела для цитат
+  ]
+  component TDocx [
+    <b>docx.render</b>  ○
+    --
+    • песочница, только по запросу
+  ]
+  component Embed [
+    <b>Qwen3-Embedding</b>  ○
+    --
+    • локально, 100+ языков
+  ]
+  database "Qdrant  ○\n(правила: PCI DSS, НБРК/АРРФР,\nстандарт ТЗ, политики БЦК;\nтеги домена + mandatory)" as Qdrant
+  database "Secrets Vault  ○" as SecVault
+}
+
+' ───────────────────────── Evaluation (outside runtime) ─────────────────────────
+package "Eval & Ablation (offline)" as EVAL #EEEEEE {
+  component Golden [
+    <b>Golden set ТЗ</b>  ✓ (1 ТЗ, 10 дефектов)
+    --
+    • Precision / Recall / время / стоимость
+  ]
+  component Ablate [
+    <b>Ablation runner</b>  ○
+    --
+    • Нужен ли этап на новой модели?
+    • Baseline: одна модель vs полный граф
+  ]
+}
+
+' ───────────────────────── Flows ─────────────────────────
+Analyst --> UI
+Analyst --> Bot
+UI --> GW
+Bot --> GW
+GW --> Parser
+Parser --> Masker
+Masker --> PIIVault : store tokens
+Masker --> Artifacts : обезличенное ТЗ
+Masker --> Log : emitEvent(TZ_INGESTED)
+GW --> Orch : start / wake(sessionId)
+Log ..> UI : SSE live trace
+
+Orch --> Log : getSession / emitEvent
+Orch --> Sup
+Orch --> Matcher : в параллель с Supervisor
+Matcher --> Embed
+Embed --> Qdrant
+Matcher --> Log : RULES_MATCHED
+
+Sup ..> ICritic : fan-out (parallel)
+C1 -up-|> ICritic
+C2 -up-|> ICritic
+C3 -up-|> ICritic
+C4 -up-|> ICritic
+CRules -up-|> ICritic
+CCheck -up-|> ICritic
+Cn -up-|> ICritic
+CCheck --> Qdrant : mandatory-правила домена
+
+ICritic --> Log : FINDINGS (по одному событию на критика)
+ICritic --> Exec : tz.read_span / rag.search
+
+Log --> Ground : getEvents(все FINDINGS)
+Ground --> Exec : tz.read_span
+Ground --> Merge : только подтверждённые цитаты
+Merge --> Sev
+Sev --> Log : GROUNDED, JUDGED
+Sev --> Writer : Critical и выше
+
+Writer --> PreCheck
+PreCheck ..> Writer : пусто / без изменений
+PreCheck --> Verifier
+Verifier ..> Writer : конфликт / замечания\n(max 2 loops)
+Verifier --> Log : PATCHES\n(Verified = true / false)
+
+UI --> Ask : @agent
+Ask --> Log : HUMAN_QUESTION / AGENT_ANSWER
+
+BRAIN ..> QwenClient : все ИИ-вызовы агентов\n(один интерфейс ILlmClient)
+QwenClient --> Cloud : хакатон
+QwenClient --> OnPrem : прод (тот же код)
+
+Exec --> MCP
+MCP --> SecVault : fetch creds
+MCP --> TRag
+MCP --> TSpan
+MCP --> TDocx
+TRag --> Qdrant
+TSpan --> Artifacts
+TDocx --> Artifacts
+
+Artifacts --> Demasker : отчёт + .docx
+Demasker --> PIIVault : resolve tokens
+Demasker --> UI : отчёт + diff (демаскированный)
+
+Golden ..> Ablate
+Ablate ..> Orch : конфиг этапов
+
+note bottom of Log
+  Источник истины. Сырые findings не удаляются —
+  слияние лишь добавляет события-ссылки.
+  Падение воркера → wake(sessionId) продолжает
+  с последнего события; критики не перезапускаются.
+end note
+
+note bottom of Exec
+  Падение инструмента/песочницы возвращается как ToolError,
+  а не роняет сессию. Инструменты только читают, ключей нет.
+end note
+
+note top of SEC
+  LLM-агенты видят только токены.
+  Демаскирование — единственная точка выхода PII.
+end note
+
+
+legend right
+  ✓ — есть в C#-прототипе (doc1/prototype)
+  ○ — запланировано
+  Модели: qwen4-max — решения,
+  qwen3.7-plus — критики/правки,
+  qwen3.7-flash — рутина/чек-лист
+endlegend
+@enduml

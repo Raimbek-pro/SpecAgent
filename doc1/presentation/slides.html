@@ -133,11 +133,20 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
 
 <!-- 5 -->
 <section class="slide" style="padding:44px 40px 52px">
-  <div class="kicker" style="margin-left:48px">Полная схема · v2</div>
+  <div class="kicker" style="margin-left:48px">Обзорная схема · v2</div>
   <div class="crop" style="flex:1;margin-top:8px">
     <svg viewBox="0 0 4077 1613" preserveAspectRatio="xMidYMid meet"><image href="../diagrams/architecture.svg" width="4077" height="1613"/></svg>
   </div>
   <div class="foot" style="left:48px;right:48px"><span>Схема в векторе: увеличьте, чтобы прочитать подписи. На схеме «FastAPI» и «LangGraph»; у нас ASP.NET Core и C#-оркестратор.</span><span>5</span></div>
+</section>
+
+<!-- 5b -->
+<section class="slide" style="padding:44px 40px 52px">
+  <div class="kicker" style="margin-left:48px">Расширенная схема · v3 — каждый блок раскрыт</div>
+  <div class="crop" style="flex:1;margin-top:8px">
+    <svg viewBox="0 0 4682 2963" preserveAspectRatio="xMidYMid meet"><image href="../diagrams/architecture-v3.svg" width="4682" height="2963"/></svg>
+  </div>
+  <div class="foot" style="left:48px;right:48px"><span>Та же структура, что v2 + Meta-Critic по шагам, цикл правок (≤ 2 раунда), чек-лист, Qdrant, Qwen. ✓ есть в прототипе · ○ план</span><span>6</span></div>
 </section>
 
 <!-- 6 -->
@@ -169,7 +178,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
       </ul>
     </div>
   </div>
-  <div class="foot"><span>SpecAgent</span><span>6</span></div>
+  <div class="foot"><span>SpecAgent</span><span>7</span></div>
 </section>
 
 <!-- 7 -->
@@ -177,7 +186,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
   <div class="kicker t-brn">Brain · фрагмент схемы</div>
   <h1>Мозг: маршрутизация, рой критиков, арбитр, правки</h1>
   <div class="crop" style="flex:1;margin-top:30px"><svg viewBox="895 484 1752 685" preserveAspectRatio="xMidYMid meet"><image href="../diagrams/architecture.svg" width="4077" height="1613"/></svg></div>
-  <div class="foot"><span>Supervisor → Critic Registry (параллельно) → Meta-Critic Judge → Patch Writer ⇄ Verifier</span><span>7</span></div>
+  <div class="foot"><span>Supervisor → Critic Registry (параллельно) → Meta-Critic Judge → Patch Writer ⇄ Verifier</span><span>8</span></div>
 </section>
 
 <!-- 7b -->
@@ -195,7 +204,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
       <tr><td><b>Writer ⇄ Verifier</b></td><td>Пишет правку и Gherkin; проверяющий сверяет с соседними разделами, до 2 раундов</td><td>plus → max</td></tr>
     </table>
   </div>
-  <div class="foot"><span>Новый критик: это промпт и строка конфига, граф не меняется</span><span>8</span></div>
+  <div class="foot"><span>Новый критик: это промпт и строка конфига, граф не меняется</span><span>9</span></div>
 </section>
 
 <!-- 8 -->
@@ -218,7 +227,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
       </ul>
     </div>
   </div>
-  <div class="foot"><span>Проверено тестом в прототипе</span><span>9</span></div>
+  <div class="foot"><span>Проверено тестом в прототипе</span><span>10</span></div>
 </section>
 
 <!-- 9 -->
@@ -233,7 +242,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
       <div class="card hnd"><h2>Песочница по запросу</h2><p><code>docx.render</code> стартует только когда нужен отчёт, поэтому первый ответ приходит быстрее.</p></div>
     </div>
   </div>
-  <div class="foot"><span>SpecAgent</span><span>10</span></div>
+  <div class="foot"><span>SpecAgent</span><span>11</span></div>
 </section>
 
 <!-- 9b -->
@@ -259,7 +268,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
       <p style="margin-top:20px"><b>Итого ≈ 0–3 с</b> <span style="color:var(--mute)">к аудиту в десятки секунд. Оценка; заменим замерами.</span></p>
     </div>
   </div>
-  <div class="foot"><span>База: PCI DSS, НБРК / АРРФР, стандарт ТЗ, политики БЦК. Само ТЗ в Qdrant не хранится.</span><span>11</span></div>
+  <div class="foot"><span>База: PCI DSS, НБРК / АРРФР, стандарт ТЗ, политики БЦК. Само ТЗ в Qdrant не хранится.</span><span>12</span></div>
 </section>
 
 <!-- 10 -->
@@ -277,7 +286,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
       <tr><td>Правка ломает соседний раздел</td><td>Verifier сверяет с соседями, до 2 раундов</td><td>ИИ, в журнале</td></tr>
     </table>
   </div>
-  <div class="foot"><span>SpecAgent</span><span>12</span></div>
+  <div class="foot"><span>SpecAgent</span><span>13</span></div>
 </section>
 
 <!-- 11 -->
@@ -295,7 +304,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
     <div class="step" style="border-color:var(--hnd);background:var(--hnd-bg)"><div class="n">8</div><div class="t">Правки и .docx</div><div class="e">PATCHES · REPORT_RENDERED</div></div>
     <div class="step" style="border-color:var(--sec);background:var(--sec-bg)"><div class="n">9</div><div class="t">Демаскирование и выдача</div><div class="e">DELIVERED</div></div>
   </div>
-  <div class="foot"><span>Цвет шага = слой на схеме</span><span>13</span></div>
+  <div class="foot"><span>Цвет шага = слой на схеме</span><span>14</span></div>
 </section>
 
 <!-- 12 -->
@@ -323,7 +332,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
       <p style="margin-top:12px;color:var(--mute)">Open weights (Apache 2.0): банк может запустить те же модели у себя, тогда текст ТЗ не покидает банк.</p>
     </div>
   </div>
-  <div class="foot"><span>SpecAgent</span><span>14</span></div>
+  <div class="foot"><span>SpecAgent</span><span>15</span></div>
 </section>
 
 <!-- 13 -->
@@ -347,7 +356,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
       <p style="margin-top:24px">Сравниваем три варианта: только правила, один промпт и полный SpecAgent. <span style="color:var(--mute)">Цифры появятся после прогона на датасете; здесь мы их не придумываем.</span></p>
     </div>
   </div>
-  <div class="foot"><span>Демо-ТЗ: P2P-переводы по номеру телефона, 10 внесённых дефектов</span><span>15</span></div>
+  <div class="foot"><span>Демо-ТЗ: P2P-переводы по номеру телефона, 10 внесённых дефектов</span><span>16</span></div>
 </section>
 
 <!-- 14 -->
@@ -373,7 +382,7 @@ td{padding:14px 18px 14px 0;border-bottom:1px solid var(--line);vertical-align:t
       <tr><td><b>4 декабря</b></td><td>Grand Final, MNU, Астана</td></tr>
     </table>
   </div>
-  <div class="foot"><span>Номинации: Best Architecture · Best Business Value · Best Presentation</span><span>16</span></div>
+  <div class="foot"><span>Номинации: Best Architecture · Best Business Value · Best Presentation</span><span>17</span></div>
 </section>
 
 <!-- 15 -->
