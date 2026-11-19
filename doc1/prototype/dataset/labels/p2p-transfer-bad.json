@@ -1,0 +1,15 @@
+{
+  "spec": "p2p-transfer-bad.md",
+  "defects": [
+    { "id": "D1", "section": "4.3", "category": "idempotency", "severity": "Blocker", "summary": "Повтор запроса без ключа идемпотентности → двойное списание" },
+    { "id": "D2", "section": "4.3", "category": "timeouts", "severity": "Critical", "summary": "Не заданы таймауты и обработка UNKNOWN-результата" },
+    { "id": "D3", "section": "5.1", "category": "pci-dss", "severity": "Blocker", "summary": "PAN и CVV пишутся в лог" },
+    { "id": "D4", "section": "4.1", "category": "data-types", "severity": "Critical", "summary": "amount в float" },
+    { "id": "D5", "section": "2.5", "category": "consistency", "severity": "Major", "summary": "DECLINED в сценарии vs REJECTED в таблице статусов" },
+    { "id": "D6", "section": "2.4", "category": "saga", "severity": "Critical", "summary": "Нет компенсации, если зачисление упало после списания" },
+    { "id": "D7", "section": "2.1", "category": "limits", "severity": "Major", "summary": "Нет лимитов на сумму/количество переводов (AML)" },
+    { "id": "D8", "section": "2.3", "category": "auth", "severity": "Major", "summary": "Нет ограничения попыток ввода SMS-кода" },
+    { "id": "D9", "section": "6.1", "category": "ambiguity", "severity": "Minor", "summary": "«быстро», «удобно», «при необходимости» без метрик" },
+    { "id": "D10", "section": "2.2", "category": "privacy", "severity": "Major", "summary": "Показ полного имени получателя по номеру — утечка ПДн, нужно маскирование" }
+  ]
+}

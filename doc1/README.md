@@ -4,7 +4,7 @@ SpecAgent audits a software specification (ТЗ) for a bank: it finds contradict
 
 It is built as a **hierarchical multi-agent system** with a **C# / .NET 10 backend**, Claude models through the official Anthropic C# SDK, a deterministic PII-masking perimeter, and an append-only event log that lets any agent worker crash and resume without losing work.
 
-> Status: design documentation. These docs describe the reference design and the C# contracts the code will follow. Code is not committed yet.
+> Status: design documentation plus a **prototype** C# implementation in [`prototype/`](prototype/README.md). The prototype proves the design end to end; it is not production code.
 
 ## Reading order
 
@@ -17,6 +17,7 @@ It is built as a **hierarchical multi-agent system** with a **C# / .NET 10 backe
 | 5 | [backend-csharp.md](backend-csharp.md) | .NET solution layout, key classes, Anthropic SDK usage, REST + SSE API, configuration, Docker |
 | 6 | [pii-and-security.md](pii-and-security.md) | PII masking and the vault, prompt-injection defence, why the bank can trust it |
 | 7 | [evaluation-and-demo.md](evaluation-and-demo.md) | Benchmark dataset, Precision/Recall, demo script, timeline to the pitch |
+| 8 | [prototype/README.md](prototype/README.md) | ⚠️ **Prototype** C# code: what works, how to run, what is not tested yet |
 
 ## The system in five sentences
 

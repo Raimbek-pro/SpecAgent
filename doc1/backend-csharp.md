@@ -1,5 +1,7 @@
 # C# backend
 
+> The layout below exists as a **prototype** in [`prototype/`](prototype/README.md) (paths there are relative to `doc1/prototype/`). Docker Compose and the Telegram bot are not built yet.
+
 .NET 10, ASP.NET Core minimal API, one solution (`SpecAgent.slnx`) with four projects and a test project. Dependencies point one way: `Api → Agents → Ingestion → Core`.
 
 ```text

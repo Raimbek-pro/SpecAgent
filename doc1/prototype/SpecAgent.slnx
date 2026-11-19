@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SpecAgent.Agents/SpecAgent.Agents.csproj" />
+    <Project Path="src/SpecAgent.Api/SpecAgent.Api.csproj" />
+    <Project Path="src/SpecAgent.Core/SpecAgent.Core.csproj" />
+    <Project Path="src/SpecAgent.Ingestion/SpecAgent.Ingestion.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SpecAgent.Tests/SpecAgent.Tests.csproj" />
+  </Folder>
+</Solution>

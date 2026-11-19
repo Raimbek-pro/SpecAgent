@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpecAgent — ТЗ Auditor</title>
+<style>
+:root{--bg:#f4f5f7;--panel:#fff;--ink:#14171a;--mute:#5b636b;--line:#d9dde1;--hl:#fff1b8;--hl-on:#ffd666;
+--blocker:#c4161c;--critical:#e8590c;--major:#c48a00;--minor:#5b636b;--ok:#2b8a3e}
+@media (prefers-color-scheme:dark){:root{--bg:#131619;--panel:#1c2024;--ink:#eef1f3;--mute:#9aa4ad;--line:#2f353b;--hl:#4a3d00;--hl-on:#7a6200}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-size:24px;margin:0 12px 0 0}
+#score{font-weight:700;font-size:18px;margin-left:auto}
+button,input[type=file]{font:inherit}
+button{padding:6px 12px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+main{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);height:calc(100vh - 58px)}
+@media (max-width:900px){main{grid-template-columns:1fr;height:auto}}
+#doc,#side{overflow:auto;padding:16px}
+#doc{border-right:1px solid var(--line)}
+.sec{margin:0 0 18px}
+.sec h3{font-size:17px;margin:0 0 4px}
+.sec pre{white-space:pre-wrap;font:inherit;margin:0}
+mark{background:var(--hl);color:inherit;cursor:pointer;border-radius:2px}
+mark.on{background:var(--hl-on)}
+h2{font-size:14px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);margin:8px 0}
+#trace{list-style:none;padding:0;margin:0 0 16px;font-size:13px;max-height:30vh;overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
+#trace li{padding:4px 10px;border-top:1px solid var(--line)}
+#trace li:first-child{border-top:0}
+#trace b{font-weight:600}
+.card{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--minor);border-radius:8px;padding:10px 12px;margin:0 0 10px;cursor:pointer}
+.card.Blocker{border-left-color:var(--blocker)}.card.Critical{border-left-color:var(--critical)}.card.Major{border-left-color:var(--major)}
+.card .sev{font-size:12px;font-weight:700;text-transform:uppercase}
+.card.Blocker .sev{color:var(--blocker)}.card.Critical .sev{color:var(--critical)}.card.Major .sev{color:var(--major)}
+.card .meta{font-size:12px;color:var(--mute)}
+.card details{margin-top:6px}
+.diff{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px}
+.diff pre{white-space:pre-wrap;margin:0;padding:6px;border-radius:6px;background:var(--bg)}
+.ask{display:flex;gap:6px;margin-top:6px}.ask input{flex:1;font:inherit;padding:4px 8px}
+.empty{color:var(--mute)}
+</style>
+</head>
+<body>
+<header>
+  <h1>SpecAgent</h1>
+  <input type="file" id="file" accept=".docx,.pdf,.md,.txt">
+  <button id="go">Проверить ТЗ</button>
+  <span id="status" class="empty"></span>
+  <span id="score"></span>
+</header>
+<main>
+  <section id="doc"><p class="empty">Загрузите ТЗ (.docx, .pdf, .md) — текст появится здесь, проблемные места будут подсвечены.</p></section>
+  <aside id="side">
+    <h2>Live trace агентов</h2>
+    <ol id="trace"></ol>
+    <h2>Замечания</h2>
+    <div id="cards"><p class="empty">Пока нет.</p></div>
+  </aside>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => (s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let session = null, doc = null;
+
+$('#go').onclick = async () => {
+  const f = $('#file').files[0];
+  if (!f) return;
+  $('#trace').innerHTML = ''; $('#cards').innerHTML = '<p class="empty">Агенты работают…</p>'; $('#score').textContent = '';
+  const body = new FormData(); body.append('file', f);
+  const r = await fetch('/api/audits', { method: 'POST', body });
+  const j = await r.json();
+  if (!r.ok) { $('#status').textContent = j.error || 'Ошибка'; return; }
+  session = j.sessionId; $('#status').textContent = session;
+  doc = await (await fetch(`/api/audits/${session}/document`)).json();
+  renderDoc([]);
+  const es = new EventSource(`/api/audits/${session}/events`);
+  es.addEventListener('audit', ev => {
+    const e = JSON.parse(ev.data);
+    const li = document.createElement('li');
+    li.innerHTML = `<b>${esc(e.agent)}</b> · ${esc(e.type)} — ${esc(e.message)}`;
+    $('#trace').append(li); li.scrollIntoView({ block: 'nearest' });
+    if (e.type === 'REPORT_READY' || e.type === 'RUN_FAILED') { es.close(); loadReport(); }
+  });
+};
+
+function renderDoc(findings) {
+  $('#doc').innerHTML = doc.sections.map(s => {
+    let html = esc(s.text);
+    for (const f of findings.filter(f => f.sectionId === s.id)) {
+      const q = esc(f.quote);
+      if (q && html.includes(q)) html = html.replace(q, `<mark data-f="${f.id}">${q}</mark>`);
+    }
+    return `<div class="sec" id="sec-${esc(s.id)}"><h3>${esc(s.id)} ${esc(s.title)}</h3><pre>${html}</pre></div>`;
+  }).join('');
+  document.querySelectorAll('mark').forEach(m => m.onclick = () => focusFinding(m.dataset.f, false));
+}
+
+async function loadReport() {
+  const j = await (await fetch(`/api/audits/${session}`)).json();
+  if (j.status !== 'done') { $('#cards').innerHTML = '<p class="empty">Аудит не завершён — см. trace.</p>'; return; }
+  const rep = j.report;
+  $('#score').textContent = `TZ Quality Score: ${rep.qualityScore}/100`;
+  renderDoc(rep.findings);
+  const patches = Object.fromEntries(rep.patches.map(p => [p.findingId, p]));
+  $('#cards').innerHTML = rep.findings.length ? rep.findings.map(f => {
+    const p = patches[f.id];
+    return `<div class="card ${f.severity}" id="card-${f.id}" data-f="${f.id}">
+      <div class="sev">${f.severity} · ${esc(f.id)} · раздел ${esc(f.sectionId)}</div>
+      <div><b>${esc(f.title)}</b></div>
+      <div>${esc(f.description)}</div>
+      <div class="meta">агенты: ${f.agents.map(esc).join(', ')}${f.standardRef ? ' · ' + esc(f.standardRef) : ''}</div>
+      ${f.recommendation ? `<details><summary>Рекомендация</summary>${esc(f.recommendation)}</details>` : ''}
+      ${p ? `<details><summary>Патч (${p.verified ? 'проверен' : 'не прошёл проверку'}, раундов: ${p.rounds})</summary>
+        <div class="diff"><pre>${esc(p.before)}</pre><pre>${esc(p.after)}</pre></div>
+        ${p.gherkin ? `<pre>${esc(p.gherkin)}</pre>` : ''}</details>` : ''}
+      <details><summary>Почему арбитр оставил</summary>${esc(f.rationale)}</details>
+      <div class="ask"><input placeholder="@compliance проверь на IDOR…" data-s="${esc(f.sectionId)}"><button>Спросить</button></div>
+    </div>`;
+  }).join('') : '<p class="empty">Дефектов не найдено.</p>';
+  document.querySelectorAll('.card').forEach(c => c.onclick = e => {
+    if (e.target.closest('details,.ask')) return;
+    focusFinding(c.dataset.f, true);
+  });
+  document.querySelectorAll('.ask button').forEach(b => b.onclick = async () => {
+    const input = b.previousElementSibling, m = input.value.match(/^@(\w+)\s+(.*)$/);
+    if (!m) { input.value = '@compliance ' + input.value; return; }
+    b.disabled = true;
+    const r = await fetch(`/api/audits/${session}/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent: m[1], sectionId: input.dataset.s, question: m[2] }) });
+    const a = await r.json(); b.disabled = false;
+    input.insertAdjacentHTML('afterend', '');
+    b.parentElement.insertAdjacentHTML('afterend', `<div class="meta">@${esc(m[1])}: ${esc(a.answer || a.error)}</div>`);
+  });
+}
+
+function focusFinding(id, scrollDoc) {
+  document.querySelectorAll('mark.on').forEach(m => m.classList.remove('on'));
+  const mark = document.querySelector(`mark[data-f="${id}"]`);
+  if (mark) { mark.classList.add('on'); if (scrollDoc) mark.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  if (!scrollDoc) document.getElementById('card-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+</script>
+</body>
+</html>
