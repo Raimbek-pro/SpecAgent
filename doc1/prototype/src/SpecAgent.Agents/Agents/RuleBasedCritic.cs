@@ -22,6 +22,9 @@ public static partial class RuleBasedCritic
     [GeneratedRegex(@"(?i)тайм-?аут|timeout|время ожидания")] private static partial Regex Timeout();
     [GeneratedRegex(@"(?i)\bCVV2?\b|\bCVC2?\b")] private static partial Regex Cvv();
     [GeneratedRegex(@"(?i)лог|журнал|log|сохран|хран")] private static partial Regex StoreOrLog();
+    [GeneratedRegex(@"(?i)REST type.*\bGET\b|curl\s+-G.*save")] private static partial Regex GetMutation();
+    [GeneratedRegex(@"(?i)""result""\s*:\s*""ERROR""")] private static partial Regex OkWithError();
+    [GeneratedRegex(@"(?i)заполня[юе]тся тестировщиками|\bTBD\b|отметки не проставлены")] private static partial Regex StubText();
 
     public static IReadOnlyList<RawFinding> Review(TzDocument doc)
     {
@@ -55,6 +58,27 @@ public static partial class RuleBasedCritic
                         "Хранение CVV после авторизации запрещено, даже в зашифрованном виде.", "pci-dss", Severity.Blocker,
                         "Запретить хранение и логирование CVV/CVC; маскировать PAN (первые 6 / последние 4).",
                         "PCI DSS v4.0 req. 3.3.1");
+
+                if (GetMutation().IsMatch(line))
+                    Add(s, line, "Мутация состояния через HTTP GET",
+                        "Изменение настроек/лимитов через GET-запрос нарушает RFC 7231 и приводит к утечке параметров в логи прокси и кэш.",
+                        "api-design", Severity.Blocker,
+                        "Заменить метод на PUT/POST с передачей параметров в теле application/json.",
+                        "RFC 7231 / ISO 29148");
+
+                if (OkWithError().IsMatch(line) && s.Title.Contains("200", StringComparison.OrdinalIgnoreCase))
+                    Add(s, line, "HTTP 200 OK возвращается при бизнес-ошибке",
+                        "Возврат 200 OK с телом {\"result\":\"ERROR\"} нарушает REST-контракт и ломает мониторинг/шлюзы.",
+                        "api-design", Severity.Critical,
+                        "Возвращать HTTP 400 Bad Request / 422 Unprocessable Entity с единой структурой ошибки.",
+                        "ISO/IEC/IEEE 29148 (Consistency)");
+
+                if (StubText().IsMatch(line))
+                    Add(s, line, "Незаполненный раздел (заглушка в ТЗ)",
+                        "В спецификации оставлена заглушка без конкретных требований или отметок ревью.",
+                        "completeness", Severity.Major,
+                        "Заполнить раздел проверяемыми требованиями и критериями приёмки до передачи в разработку.",
+                        "ISO/IEC/IEEE 29148 п. 5.2.6 (Completeness)");
             }
         }
 

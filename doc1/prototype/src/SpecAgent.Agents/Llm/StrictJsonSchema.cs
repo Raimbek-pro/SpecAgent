@@ -26,10 +26,15 @@ public static class StrictJsonSchema
             TreatNullObliviousAsNonNullable = true,
             TransformSchemaNode = (_, node) =>
             {
-                if (node is JsonObject obj && obj["properties"] is JsonObject props)
+                if (node is JsonObject obj)
                 {
-                    obj["additionalProperties"] = false;
-                    obj["required"] = new JsonArray(props.Select(p => (JsonNode)p.Key).ToArray());
+                    if (obj.ContainsKey("enum") && !obj.ContainsKey("type"))
+                        obj["type"] = "string";
+                    if (obj["properties"] is JsonObject props)
+                    {
+                        obj["additionalProperties"] = false;
+                        obj["required"] = new JsonArray(props.Select(p => (JsonNode)p.Key).ToArray());
+                    }
                 }
                 return node;
             },

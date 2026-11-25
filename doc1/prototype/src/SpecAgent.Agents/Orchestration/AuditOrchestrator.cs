@@ -22,7 +22,8 @@ public sealed class AuditOrchestrator(
     PromptLibrary prompts,
     ToolGateway tools,
     IOptions<PatchOptions> patchOptions,
-    ILogger<AuditOrchestrator> logger)
+    ILogger<AuditOrchestrator> logger,
+    ChecklistAgent? checklist = null)
 {
     public const string Name = "orchestrator";
 
@@ -59,7 +60,11 @@ public sealed class AuditOrchestrator(
             }
 
             var pending = routing.Routes.Where(r => !state.CriticFindings.ContainsKey(r.Key)).ToList();
-            var results = await Task.WhenAll(pending.Select(r => RunCriticAsync(sessionId, doc, r.Key, r.Value, ct)));
+            var tasks = pending.Select(r => RunCriticAsync(sessionId, doc, r.Key, r.Value, ct)).ToList();
+            if (checklist is not null && !state.CriticFindings.ContainsKey(ChecklistAgent.Name))
+                tasks.Add(RunChecklistAsync(sessionId, doc, checklist, ct));
+
+            var results = await Task.WhenAll(tasks);
             foreach (var (critic, findings) in results)
                 if (findings is not null) state.CriticFindings[critic] = findings;
 
@@ -130,6 +135,26 @@ public sealed class AuditOrchestrator(
             await events.AppendAsync(sessionId, EventTypes.Findings, critic, "0 raw (critic failed)",
                 new FindingsPayload(critic, []), ct);
             return (critic, []);
+        }
+    }
+
+    private async Task<(string Critic, IReadOnlyList<RawFinding>? Findings)> RunChecklistAsync(
+        string sessionId, Core.Documents.TzDocument doc, ChecklistAgent agent, CancellationToken ct)
+    {
+        await events.AppendAsync(sessionId, EventTypes.CriticStarted, ChecklistAgent.Name, "batch checklist pass (12 rules)", ct: ct);
+        try
+        {
+            var findings = await agent.ReviewAsync(doc, ct);
+            await events.AppendAsync(sessionId, EventTypes.Findings, ChecklistAgent.Name, $"{findings.Count} raw",
+                new FindingsPayload(ChecklistAgent.Name, findings), ct);
+            return (ChecklistAgent.Name, findings);
+        }
+        catch (LlmException ex)
+        {
+            await events.AppendAsync(sessionId, EventTypes.CriticFailed, ChecklistAgent.Name, ex.Message, ct: ct);
+            await events.AppendAsync(sessionId, EventTypes.Findings, ChecklistAgent.Name, "0 raw (checklist failed)",
+                new FindingsPayload(ChecklistAgent.Name, []), ct);
+            return (ChecklistAgent.Name, []);
         }
     }
 

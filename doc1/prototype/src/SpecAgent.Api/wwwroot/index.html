@@ -3,141 +3,655 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SpecAgent — ТЗ Auditor</title>
+<title>SpecAgent — Sea Glass ТЗ Auditor</title>
 <style>
-:root{--bg:#f4f5f7;--panel:#fff;--ink:#14171a;--mute:#5b636b;--line:#d9dde1;--hl:#fff1b8;--hl-on:#ffd666;
---blocker:#c4161c;--critical:#e8590c;--major:#c48a00;--minor:#5b636b;--ok:#2b8a3e}
-@media (prefers-color-scheme:dark){:root{--bg:#131619;--panel:#1c2024;--ink:#eef1f3;--mute:#9aa4ad;--line:#2f353b;--hl:#4a3d00;--hl-on:#7a6200}}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
-header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
-header h1{font-size:24px;margin:0 12px 0 0}
-#score{font-weight:700;font-size:18px;margin-left:auto}
-button,input[type=file]{font:inherit}
-button{padding:6px 12px;border-radius:6px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
-main{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);height:calc(100vh - 58px)}
-@media (max-width:900px){main{grid-template-columns:1fr;height:auto}}
-#doc,#side{overflow:auto;padding:16px}
-#doc{border-right:1px solid var(--line)}
-.sec{margin:0 0 18px}
-.sec h3{font-size:17px;margin:0 0 4px}
-.sec pre{white-space:pre-wrap;font:inherit;margin:0}
-mark{background:var(--hl);color:inherit;cursor:pointer;border-radius:2px}
-mark.on{background:var(--hl-on)}
-h2{font-size:14px;text-transform:uppercase;letter-spacing:.04em;color:var(--mute);margin:8px 0}
-#trace{list-style:none;padding:0;margin:0 0 16px;font-size:13px;max-height:30vh;overflow:auto;border:1px solid var(--line);border-radius:8px;background:var(--panel)}
-#trace li{padding:4px 10px;border-top:1px solid var(--line)}
-#trace li:first-child{border-top:0}
-#trace b{font-weight:600}
-.card{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--minor);border-radius:8px;padding:10px 12px;margin:0 0 10px;cursor:pointer}
-.card.Blocker{border-left-color:var(--blocker)}.card.Critical{border-left-color:var(--critical)}.card.Major{border-left-color:var(--major)}
-.card .sev{font-size:12px;font-weight:700;text-transform:uppercase}
-.card.Blocker .sev{color:var(--blocker)}.card.Critical .sev{color:var(--critical)}.card.Major .sev{color:var(--major)}
-.card .meta{font-size:12px;color:var(--mute)}
-.card details{margin-top:6px}
-.diff{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px}
-.diff pre{white-space:pre-wrap;margin:0;padding:6px;border-radius:6px;background:var(--bg)}
-.ask{display:flex;gap:6px;margin-top:6px}.ask input{flex:1;font:inherit;padding:4px 8px}
-.empty{color:var(--mute)}
+:root {
+  /* Sea Glass 5 Coastal Palettes */
+  --lagoon-body: rgba(181, 208, 235, 0.42);
+  --lagoon-edge: #D6E9FF;
+  --lagoon-ink:  #2F647C;
+
+  --mint-body:   rgba(192, 222, 208, 0.46);
+  --mint-edge:   #E6FFF0;
+  --mint-ink:    #396C5A;
+
+  --rose-body:   rgba(238, 206, 214, 0.48);
+  --rose-edge:   #FFF0F1;
+  --rose-ink:    #963F59;
+
+  --amber-body:  rgba(240, 217, 190, 0.50);
+  --amber-edge:  #FFFCE0;
+  --amber-ink:   #865733;
+
+  --lilac-body:  rgba(225, 205, 232, 0.44);
+  --lilac-edge:  #FBE8F7;
+  --lilac-ink:   #71388B;
+
+  --surface:     rgba(255, 255, 255, 0.62);
+  --ink:         #1D3540;
+  --mute:        #516C78;
+  --line:        rgba(47, 100, 124, 0.14);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  font: 15px/1.58 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  background:
+    radial-gradient(circle at 12% 14%, rgba(181, 208, 235, 0.65) 0%, transparent 45%),
+    radial-gradient(circle at 86% 18%, rgba(225, 205, 232, 0.55) 0%, transparent 42%),
+    radial-gradient(circle at 75% 88%, rgba(192, 222, 208, 0.62) 0%, transparent 48%),
+    radial-gradient(circle at 20% 85%, rgba(240, 217, 190, 0.45) 0%, transparent 45%),
+    #EDF4F8;
+  background-attachment: fixed;
+}
+
+/* Sea Glass Surface Primitive */
+.sg {
+  position: relative;
+  backdrop-filter: blur(18px) saturate(145%);
+  -webkit-backdrop-filter: blur(18px) saturate(145%);
+  border: 1.5px solid rgba(255, 255, 255, 0.72);
+  box-shadow:
+    0 10px 30px -10px rgba(47, 100, 124, 0.16),
+    inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.85),
+    inset -1px -1px 0 rgba(47, 100, 124, 0.10);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+.sg-lagoon { background: var(--lagoon-body); border-color: var(--lagoon-edge); color: var(--lagoon-ink); }
+.sg-mint   { background: var(--mint-body);   border-color: var(--mint-edge);   color: var(--mint-ink); }
+.sg-rose   { background: var(--rose-body);   border-color: var(--rose-edge);   color: var(--rose-ink); }
+.sg-amber  { background: var(--amber-body);  border-color: var(--amber-edge);  color: var(--amber-ink); }
+.sg-lilac  { background: var(--lilac-body);  border-color: var(--lilac-edge);  color: var(--lilac-ink); }
+.sg-clear  { background: var(--surface);     border-color: rgba(255, 255, 255, 0.82); color: var(--ink); }
+
+/* Tactile Capsule Button */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  font: 600 14px/1 inherit;
+  cursor: pointer;
+  text-decoration: none;
+  user-select: none;
+}
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow:
+    0 12px 26px -8px rgba(47, 100, 124, 0.24),
+    inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.95);
+}
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: 0 3px 10px -4px rgba(47, 100, 124, 0.18);
+}
+.btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* Header */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 24px;
+  background: rgba(244, 249, 252, 0.72);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.78);
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-right: 8px;
+}
+.brand-dot {
+  width: 30px;
+  height: 30px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 15px;
+}
+header h1 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: -0.02em; color: var(--lagoon-ink); }
+.pill {
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.header-right {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+#exports { display: none; gap: 8px; flex-wrap: wrap; }
+#exports.visible { display: flex; }
+
+/* Main Split Layout */
+main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 20px;
+  padding: 20px 24px 32px;
+  max-width: 1680px;
+  margin: 0 auto;
+  align-items: start;
+}
+@media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+
+/* Drag & Drop Zone */
+#dropzone {
+  border-radius: 24px;
+  padding: 28px 24px;
+  text-align: center;
+  cursor: pointer;
+  margin-bottom: 18px;
+  border: 2px dashed rgba(47, 100, 124, 0.30);
+}
+#dropzone.dragover {
+  background: var(--mint-body);
+  border-color: var(--mint-ink);
+  transform: scale(1.008);
+}
+#dropzone h3 { margin: 0 0 6px; font-size: 17px; color: var(--lagoon-ink); }
+#dropzone p { margin: 0 0 14px; font-size: 14px; color: var(--mute); }
+#file-name { font-weight: 600; color: var(--mint-ink); margin-left: 8px; }
+input[type=file] { display: none; }
+
+/* Document Pane (Markdown Rendered) */
+#doc-panel {
+  border-radius: 26px;
+  padding: 24px 28px;
+  min-height: calc(100vh - 140px);
+}
+.sec {
+  margin: 0 0 22px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.sec:last-child { border-bottom: 0; }
+.sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 10px;
+}
+.sec-id {
+  font: 700 12px/1 "SF Mono", Menlo, monospace;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--lagoon-body);
+  color: var(--lagoon-ink);
+}
+.sec h3 { margin: 0; font-size: 17px; font-weight: 700; color: var(--ink); }
+
+/* Rendered Markdown Typography */
+.md p { margin: 0 0 8px; }
+.md ul, .md ol { margin: 4px 0 10px; padding-left: 22px; }
+.md li { margin-bottom: 4px; }
+.md code {
+  font-family: "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: rgba(47, 100, 124, 0.09);
+  color: var(--lagoon-ink);
+}
+.md pre.codeblock {
+  margin: 8px 0 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(29, 53, 64, 0.06);
+  border: 1px solid var(--line);
+  overflow-x: auto;
+  font: 13px/1.45 "SF Mono", Menlo, monospace;
+  white-space: pre-wrap;
+}
+.md table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0 14px;
+  font-size: 13.5px;
+  border-radius: 14px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--line);
+}
+.md th {
+  text-align: left;
+  padding: 8px 10px;
+  background: rgba(181, 208, 235, 0.35);
+  color: var(--lagoon-ink);
+  font-weight: 700;
+  border-bottom: 1px solid var(--line);
+}
+.md td {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(47, 100, 124, 0.08);
+  vertical-align: top;
+}
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+
+mark {
+  background: rgba(240, 217, 190, 0.85);
+  color: #5A3516;
+  padding: 1px 4px;
+  border-radius: 5px;
+  cursor: pointer;
+  border-bottom: 2px solid #D99B4E;
+}
+mark.on {
+  background: rgba(238, 178, 192, 0.92);
+  color: #6B1F37;
+  border-bottom-color: #963F59;
+  box-shadow: 0 0 0 3px rgba(150, 63, 89, 0.22);
+}
+
+/* Right Side: Trace & Cards */
+.section-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--mute);
+  margin: 4px 0 10px 6px;
+}
+#trace-box {
+  border-radius: 22px;
+  padding: 12px 14px;
+  margin-bottom: 20px;
+}
+#trace {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 12.5px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+#trace li {
+  padding: 5px 6px;
+  border-bottom: 1px solid rgba(113, 56, 139, 0.10);
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+#trace li:last-child { border-bottom: 0; }
+#trace .ag { font-weight: 700; white-space: nowrap; }
+#trace .tp { font-family: "SF Mono", Menlo, monospace; font-size: 11px; opacity: 0.78; white-space: nowrap; }
+
+/* Finding Cards */
+.card {
+  border-radius: 22px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  cursor: pointer;
+}
+.card:hover { transform: translateY(-2px); }
+.card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.sev-badge {
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.65);
+}
+.card-title { font-size: 16px; font-weight: 700; margin: 0 0 6px; }
+.card-desc { font-size: 14px; margin: 0 0 8px; opacity: 0.92; }
+.card-meta { font-size: 12px; opacity: 0.78; margin-bottom: 8px; }
+.card details {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.52);
+  color: var(--ink);
+  font-size: 13.5px;
+}
+.card summary { font-weight: 600; cursor: pointer; }
+.diff { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+@media (max-width: 1200px) { .diff { grid-template-columns: 1fr; } }
+.diff-col {
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--line);
+  font-size: 12.5px;
+}
+.diff-col b { display: block; font-size: 11px; text-transform: uppercase; margin-bottom: 4px; color: var(--mute); }
+.diff-col pre, .gherkin pre {
+  white-space: pre-wrap;
+  margin: 0;
+  font: 12.5px/1.45 "SF Mono", Menlo, monospace;
+}
+.gherkin {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(192, 222, 208, 0.35);
+  color: var(--mint-ink);
+}
+.ask {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.ask input {
+  flex: 1;
+  border: 1px solid rgba(47, 100, 124, 0.22);
+  border-radius: 999px;
+  padding: 7px 14px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--ink);
+  font: 13px inherit;
+  outline: none;
+}
+.ask-reply {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--ink);
+  font-size: 13px;
+}
+.empty { color: var(--mute); font-size: 14px; }
 </style>
 </head>
 <body>
+
 <header>
-  <h1>SpecAgent</h1>
-  <input type="file" id="file" accept=".docx,.pdf,.md,.txt">
-  <button id="go">Проверить ТЗ</button>
-  <span id="status" class="empty"></span>
-  <span id="score"></span>
+  <div class="brand">
+    <div class="brand-dot sg sg-lagoon">S</div>
+    <h1>SpecAgent</h1>
+  </div>
+  <span id="status" class="pill sg sg-clear empty">Готов к проверке ТЗ</span>
+  <div class="header-right">
+    <span id="score" class="pill sg sg-lagoon" style="display:none"></span>
+    <div id="exports">
+      <a id="dl-report" class="btn sg sg-lagoon" download>📄 Скачать отчёт (.md)</a>
+      <a id="dl-fixed" class="btn sg sg-mint" download>✨ Скачать исправленное ТЗ (.md)</a>
+    </div>
+  </div>
 </header>
+
 <main>
-  <section id="doc"><p class="empty">Загрузите ТЗ (.docx, .pdf, .md) — текст появится здесь, проблемные места будут подсвечены.</p></section>
-  <aside id="side">
-    <h2>Live trace агентов</h2>
-    <ol id="trace"></ol>
-    <h2>Замечания</h2>
-    <div id="cards"><p class="empty">Пока нет.</p></div>
+  <div>
+    <div id="dropzone" class="sg sg-clear">
+      <h3>Перетащите файл ТЗ сюда (Drag &amp; Drop)</h3>
+      <p>Поддерживаются <b>.md</b>, <b>.docx</b>, <b>.pdf</b> · PII маскируется автоматически до отправки в AI</p>
+      <input type="file" id="file" accept=".docx,.pdf,.md,.txt">
+      <button type="button" id="pick" class="btn sg sg-lagoon">Выбрать файл</button>
+      <button type="button" id="go" class="btn sg sg-mint" disabled>🚀 Проверить ТЗ</button>
+      <span id="file-name"></span>
+    </div>
+
+    <section id="doc-panel" class="sg sg-clear">
+      <div id="doc"><p class="empty">Загрузите спецификацию выше — здесь появится красиво отформатированный Markdown с подсветкой всех найденных дефектов.</p></div>
+    </section>
+  </div>
+
+  <aside>
+    <div class="section-label">Live Trace агентов (Session Event Log)</div>
+    <div id="trace-box" class="sg sg-lilac">
+      <ol id="trace"><li class="empty">Ожидание запуска аудита…</li></ol>
+    </div>
+
+    <div class="section-label">Найденные замечания и патчи</div>
+    <div id="cards"><p class="empty">После проверки здесь появятся карточки дефектов (Blocker / Critical / Major / Minor) с патчами и Gherkin-сценариями.</p></div>
   </aside>
 </main>
+
 <script>
 const $ = s => document.querySelector(s);
 const esc = s => (s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let session = null, doc = null;
+let session = null, doc = null, selectedFile = null;
 
-$('#go').onclick = async () => {
-  const f = $('#file').files[0];
+// Drag & Drop + File Picker
+const dropzone = $('#dropzone');
+const fileInput = $('#file');
+
+$('#pick').onclick = e => { e.stopPropagation(); fileInput.click(); };
+dropzone.onclick = e => { if (!e.target.closest('button')) fileInput.click(); };
+
+function setFile(f) {
   if (!f) return;
-  $('#trace').innerHTML = ''; $('#cards').innerHTML = '<p class="empty">Агенты работают…</p>'; $('#score').textContent = '';
-  const body = new FormData(); body.append('file', f);
+  selectedFile = f;
+  $('#file-name').textContent = `📎 ${f.name} (${(f.size / 1024).toFixed(1)} КБ)`;
+  $('#go').disabled = false;
+}
+fileInput.onchange = () => setFile(fileInput.files[0]);
+
+['dragenter', 'dragover'].forEach(ev => dropzone.addEventListener(ev, e => {
+  e.preventDefault(); e.stopPropagation(); dropzone.classList.add('dragover');
+}));
+['dragleave', 'drop'].forEach(ev => dropzone.addEventListener(ev, e => {
+  e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('dragover');
+}));
+dropzone.addEventListener('drop', e => {
+  const f = e.dataTransfer?.files?.[0];
+  if (f) { setFile(f); startAudit(); }
+});
+
+$('#go').onclick = e => { e.stopPropagation(); startAudit(); };
+
+async function startAudit() {
+  if (!selectedFile) return;
+  $('#trace').innerHTML = '';
+  $('#cards').innerHTML = '<div class="card sg sg-lagoon"><b>Агенты работают…</b><div class="card-meta">Supervisor → Критики + Checklist → Meta-Critic → Patch Loop</div></div>';
+  $('#score').style.display = 'none';
+  $('#exports').classList.remove('visible');
+  $('#go').disabled = true;
+  $('#status').textContent = `Загрузка ${selectedFile.name}…`;
+
+  const body = new FormData();
+  body.append('file', selectedFile);
   const r = await fetch('/api/audits', { method: 'POST', body });
   const j = await r.json();
-  if (!r.ok) { $('#status').textContent = j.error || 'Ошибка'; return; }
-  session = j.sessionId; $('#status').textContent = session;
+  if (!r.ok) {
+    $('#status').textContent = j.error || 'Ошибка загрузки';
+    $('#go').disabled = false;
+    return;
+  }
+
+  session = j.sessionId;
+  $('#status').textContent = `Сессия: ${session}`;
   doc = await (await fetch(`/api/audits/${session}/document`)).json();
   renderDoc([]);
+
   const es = new EventSource(`/api/audits/${session}/events`);
   es.addEventListener('audit', ev => {
     const e = JSON.parse(ev.data);
     const li = document.createElement('li');
-    li.innerHTML = `<b>${esc(e.agent)}</b> · ${esc(e.type)} — ${esc(e.message)}`;
-    $('#trace').append(li); li.scrollIntoView({ block: 'nearest' });
-    if (e.type === 'REPORT_READY' || e.type === 'RUN_FAILED') { es.close(); loadReport(); }
+    li.innerHTML = `<span class="ag">${esc(e.agent)}</span><span class="tp">${esc(e.type)}</span><span>${esc(e.message)}</span>`;
+    $('#trace').append(li);
+    li.scrollIntoView({ block: 'nearest' });
+    if (e.type === 'REPORT_READY' || e.type === 'RUN_FAILED') {
+      es.close();
+      $('#go').disabled = false;
+      loadReport();
+    }
   });
-};
+}
+
+// Lightweight Markdown -> HTML Renderer (tables, code blocks, lists, bold, inline code)
+function renderMarkdown(rawText, sectionFindings) {
+  let text = rawText ?? '';
+  const marks = [];
+  // Inject placeholders for verbatim quotes BEFORE markdown parsing so tables/lists don't break matching
+  for (const f of sectionFindings) {
+    if (!f.quote) continue;
+    const idx = text.indexOf(f.quote);
+    if (idx !== -1) {
+      const token = `@@MARK_${marks.length}@@`;
+      marks.push({ token, id: f.id, quote: f.quote });
+      text = text.slice(0, idx) + token + text.slice(idx + f.quote.length);
+    }
+  }
+
+  const lines = text.split('\n');
+  let html = '';
+  let inCode = false, codeBuf = [];
+  let inTable = false, tableRows = [];
+  let inList = false;
+
+  const inline = s => {
+    let out = esc(s)
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+    for (const m of marks) {
+      if (out.includes(m.token)) {
+        const inner = esc(m.quote).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+        out = out.replace(m.token, `<mark data-f="${esc(m.id)}">${inner}</mark>`);
+      }
+    }
+    return out;
+  };
+
+  const flushTable = () => {
+    if (!inTable) return;
+    const rows = tableRows.filter(r => !/^\|[\s:|-]+\|$/.test(r.trim()));
+    if (rows.length) {
+      html += '<table><thead><tr>' +
+        rows[0].replace(/^\||\|$/g, '').split('|').map(c => `<th>${inline(c.trim())}</th>`).join('') +
+        '</tr></thead><tbody>' +
+        rows.slice(1).map(r => '<tr>' + r.replace(/^\||\|$/g, '').split('|').map(c => `<td>${inline(c.trim())}</td>`).join('') + '</tr>').join('') +
+        '</tbody></table>';
+    }
+    tableRows = []; inTable = false;
+  };
+  const flushList = () => { if (inList) { html += '</ul>'; inList = false; } };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    if (line.trim().startsWith('```')) {
+      flushTable(); flushList();
+      if (!inCode) { inCode = true; codeBuf = []; }
+      else { html += `<pre class="codeblock">${inline(codeBuf.join('\n'))}</pre>`; inCode = false; }
+      continue;
+    }
+    if (inCode) { codeBuf.push(line); continue; }
+
+    if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
+      flushList(); inTable = true; tableRows.push(line.trim()); continue;
+    } else flushTable();
+
+    if (/^[-*•]\s+/.test(line.trim()) || /^\d+\.\s+/.test(line.trim())) {
+      if (!inList) { html += '<ul>'; inList = true; }
+      html += `<li>${inline(line.trim().replace(/^([-*•]|\d+\.)\s+/, ''))}</li>`;
+      continue;
+    } else flushList();
+
+    if (/^---+$/.test(line.trim())) { html += '<hr>'; continue; }
+    if (line.trim() === '') continue;
+    html += `<p>${inline(line)}</p>`;
+  }
+  flushTable(); flushList();
+  if (inCode) html += `<pre class="codeblock">${inline(codeBuf.join('\n'))}</pre>`;
+  return html;
+}
 
 function renderDoc(findings) {
   $('#doc').innerHTML = doc.sections.map(s => {
-    let html = esc(s.text);
-    for (const f of findings.filter(f => f.sectionId === s.id)) {
-      const q = esc(f.quote);
-      if (q && html.includes(q)) html = html.replace(q, `<mark data-f="${f.id}">${q}</mark>`);
-    }
-    return `<div class="sec" id="sec-${esc(s.id)}"><h3>${esc(s.id)} ${esc(s.title)}</h3><pre>${html}</pre></div>`;
+    const secFindings = findings.filter(f => f.sectionId === s.id);
+    return `<div class="sec" id="sec-${esc(s.id)}">
+      <div class="sec-head"><span class="sec-id">${esc(s.id)}</span><h3>${esc(s.title)}</h3></div>
+      <div class="md">${renderMarkdown(s.text, secFindings)}</div>
+    </div>`;
   }).join('');
   document.querySelectorAll('mark').forEach(m => m.onclick = () => focusFinding(m.dataset.f, false));
 }
 
+function sevPalette(sev) {
+  return { Blocker: 'sg-rose', Critical: 'sg-amber', Major: 'sg-lagoon', Minor: 'sg-lilac' }[sev] || 'sg-clear';
+}
+
 async function loadReport() {
   const j = await (await fetch(`/api/audits/${session}`)).json();
-  if (j.status !== 'done') { $('#cards').innerHTML = '<p class="empty">Аудит не завершён — см. trace.</p>'; return; }
+  if (j.status !== 'done') {
+    $('#cards').innerHTML = '<div class="card sg sg-rose"><b>Аудит не завершён</b> — проверьте Live Trace выше.</div>';
+    return;
+  }
   const rep = j.report;
-  $('#score').textContent = `TZ Quality Score: ${rep.qualityScore}/100`;
+  const scoreEl = $('#score');
+  scoreEl.textContent = `Quality Score: ${rep.qualityScore}/100`;
+  scoreEl.className = `pill sg ${rep.qualityScore >= 80 ? 'sg-mint' : rep.qualityScore >= 50 ? 'sg-amber' : 'sg-rose'}`;
+  scoreEl.style.display = 'inline-flex';
+
+  // Wire download buttons
+  $('#dl-report').href = `/api/audits/${session}/export/report.md`;
+  $('#dl-fixed').href = `/api/audits/${session}/export/fixed.md`;
+  $('#exports').classList.add('visible');
+
   renderDoc(rep.findings);
   const patches = Object.fromEntries(rep.patches.map(p => [p.findingId, p]));
+
   $('#cards').innerHTML = rep.findings.length ? rep.findings.map(f => {
     const p = patches[f.id];
-    return `<div class="card ${f.severity}" id="card-${f.id}" data-f="${f.id}">
-      <div class="sev">${f.severity} · ${esc(f.id)} · раздел ${esc(f.sectionId)}</div>
-      <div><b>${esc(f.title)}</b></div>
-      <div>${esc(f.description)}</div>
-      <div class="meta">агенты: ${f.agents.map(esc).join(', ')}${f.standardRef ? ' · ' + esc(f.standardRef) : ''}</div>
-      ${f.recommendation ? `<details><summary>Рекомендация</summary>${esc(f.recommendation)}</details>` : ''}
-      ${p ? `<details><summary>Патч (${p.verified ? 'проверен' : 'не прошёл проверку'}, раундов: ${p.rounds})</summary>
-        <div class="diff"><pre>${esc(p.before)}</pre><pre>${esc(p.after)}</pre></div>
-        ${p.gherkin ? `<pre>${esc(p.gherkin)}</pre>` : ''}</details>` : ''}
-      <details><summary>Почему арбитр оставил</summary>${esc(f.rationale)}</details>
-      <div class="ask"><input placeholder="@compliance проверь на IDOR…" data-s="${esc(f.sectionId)}"><button>Спросить</button></div>
+    return `<div class="card sg ${sevPalette(f.severity)}" id="card-${esc(f.id)}" data-f="${esc(f.id)}">
+      <div class="card-top">
+        <span class="sev-badge">${esc(f.severity)} · ${esc(f.id)}</span>
+        <span class="card-meta" style="margin:0">раздел ${esc(f.sectionId)}</span>
+      </div>
+      <div class="card-title">${esc(f.title)}</div>
+      <div class="card-desc">${esc(f.description)}</div>
+      <div class="card-meta">агенты: ${f.agents.map(esc).join(', ')}${f.standardRef ? ' · ' + esc(f.standardRef) : ''}</div>
+      ${f.recommendation ? `<details><summary>💡 Рекомендация</summary><div style="margin-top:6px">${esc(f.recommendation)}</div></details>` : ''}
+      ${p ? `<details><summary>🛠 Патч (${p.verified ? '✅ проверен' : '⚠️ требует проверки'}, раундов: ${p.rounds})</summary>
+        <div class="diff">
+          <div class="diff-col"><b>Было</b><pre>${esc(p.before)}</pre></div>
+          <div class="diff-col"><b>Стало</b><pre>${esc(p.after)}</pre></div>
+        </div>
+        ${p.gherkin ? `<div class="gherkin"><b>Gherkin (Given / When / Then)</b><pre>${esc(p.gherkin)}</pre></div>` : ''}
+      </details>` : ''}
+      <details><summary>⚖️ Почему арбитр оставил</summary><div style="margin-top:6px">${esc(f.rationale || 'Подтверждено заземлением цитаты.')}</div></details>
+      <div class="ask"><input placeholder="@compliance проверь на IDOR…" data-s="${esc(f.sectionId)}"><button class="btn sg sg-clear" style="padding:6px 14px">Спросить</button></div>
     </div>`;
-  }).join('') : '<p class="empty">Дефектов не найдено.</p>';
+  }).join('') : '<div class="card sg sg-mint"><b>Дефектов не найдено!</b></div>';
+
   document.querySelectorAll('.card').forEach(c => c.onclick = e => {
     if (e.target.closest('details,.ask')) return;
     focusFinding(c.dataset.f, true);
   });
+
   document.querySelectorAll('.ask button').forEach(b => b.onclick = async () => {
     const input = b.previousElementSibling, m = input.value.match(/^@(\w+)\s+(.*)$/);
     if (!m) { input.value = '@compliance ' + input.value; return; }
     b.disabled = true;
-    const r = await fetch(`/api/audits/${session}/ask`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agent: m[1], sectionId: input.dataset.s, question: m[2] }) });
+    const r = await fetch(`/api/audits/${session}/ask`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent: m[1], sectionId: input.dataset.s, question: m[2] })
+    });
     const a = await r.json(); b.disabled = false;
-    input.insertAdjacentHTML('afterend', '');
-    b.parentElement.insertAdjacentHTML('afterend', `<div class="meta">@${esc(m[1])}: ${esc(a.answer || a.error)}</div>`);
+    b.parentElement.insertAdjacentHTML('afterend', `<div class="ask-reply"><b>@${esc(m[1])}:</b> ${esc(a.answer || a.error)}</div>`);
   });
 }
 
 function focusFinding(id, scrollDoc) {
   document.querySelectorAll('mark.on').forEach(m => m.classList.remove('on'));
   const mark = document.querySelector(`mark[data-f="${id}"]`);
-  if (mark) { mark.classList.add('on'); if (scrollDoc) mark.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  if (mark) {
+    mark.classList.add('on');
+    if (scrollDoc) mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
   if (!scrollDoc) document.getElementById('card-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 </script>

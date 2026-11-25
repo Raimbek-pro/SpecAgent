@@ -1,14 +1,18 @@
+using System.Text;
 using System.Text.Json;
 using SpecAgent.Agents;
 using SpecAgent.Agents.Agents;
 using SpecAgent.Agents.Orchestration;
 using SpecAgent.Agents.Storage;
+using SpecAgent.Agents.Tools;
 using SpecAgent.Core.Documents;
 using SpecAgent.Core.Events;
 using SpecAgent.Core.Findings;
 using SpecAgent.Ingestion;
 using SpecAgent.Ingestion.Parsing;
 using SpecAgent.Ingestion.Pii;
+
+LoadDotEnv();
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSpecAgentIngestion();
@@ -137,7 +141,78 @@ api.MapPost("/{id}/resume", async (string id, AuditQueue queue) =>
     return Results.Accepted();
 });
 
+// 8. Export official BCC-HUB Markdown audit report (demasked).
+api.MapGet("/{id}/export/report.md", async (string id, IEventStore events, PiiMasker masker, IConfiguration config, CancellationToken ct) =>
+{
+    var log = await events.ReadAsync(id, ct: ct);
+    var state = AuditState.From(log);
+    var ready = log.LastOrDefault(e => e.Type == EventTypes.ReportReady);
+    if (state.Document is not { } doc || ready is null) return Results.NotFound();
+
+    string D(string s) => masker.Demask(id, s);
+    var demaskedDoc = doc with { Sections = doc.Sections.Select(s => s with { Title = D(s.Title), Text = D(s.Text) }).ToList() };
+    var rawReport = ready.Get<AuditReport>();
+    var demaskedReport = rawReport with
+    {
+        Findings = rawReport.Findings.Select(f => f with
+        {
+            Quote = D(f.Quote), Title = D(f.Title), Description = D(f.Description), Recommendation = D(f.Recommendation), Rationale = D(f.Rationale),
+        }).ToList(),
+        Patches = rawReport.Patches.Select(p => p with { Before = D(p.Before), After = D(p.After), Gherkin = D(p.Gherkin) }).ToList(),
+    };
+
+    var model = config["ModelRouting:Default:Model"] ?? "gemini-flash-lite-latest";
+    var md = ToolGateway.RenderReportMarkdown(demaskedDoc, demaskedReport, model);
+    return Results.File(Encoding.UTF8.GetBytes(md), "text/markdown; charset=utf-8", $"specagent-report-{id}.md");
+});
+
+// 9. Export patched/fixed specification Markdown file (demasked).
+api.MapGet("/{id}/export/fixed.md", async (string id, IEventStore events, PiiMasker masker, CancellationToken ct) =>
+{
+    var log = await events.ReadAsync(id, ct: ct);
+    var state = AuditState.From(log);
+    var ready = log.LastOrDefault(e => e.Type == EventTypes.ReportReady);
+    if (state.Document is not { } doc || ready is null) return Results.NotFound();
+
+    string D(string s) => masker.Demask(id, s);
+    var demaskedDoc = doc with { Sections = doc.Sections.Select(s => s with { Title = D(s.Title), Text = D(s.Text) }).ToList() };
+    var rawReport = ready.Get<AuditReport>();
+    var demaskedReport = rawReport with
+    {
+        Patches = rawReport.Patches.Select(p => p with { Before = D(p.Before), After = D(p.After), Gherkin = D(p.Gherkin) }).ToList(),
+    };
+
+    var md = ToolGateway.RenderPatchedDocumentMarkdown(demaskedDoc, demaskedReport);
+    var baseName = Path.GetFileNameWithoutExtension(doc.SourceFileName);
+    return Results.File(Encoding.UTF8.GetBytes(md), "text/markdown; charset=utf-8", $"{baseName}-fixed.md");
+});
+
 app.Run();
+
+static void LoadDotEnv()
+{
+    var dir = Directory.GetCurrentDirectory();
+    while (dir is not null)
+    {
+        var envPath = Path.Combine(dir, ".env");
+        if (File.Exists(envPath))
+        {
+            foreach (var line in File.ReadAllLines(envPath))
+            {
+                var trimmed = line.Trim();
+                if (string.IsNullOrEmpty(trimmed) || trimmed.StartsWith('#')) continue;
+                var idx = trimmed.IndexOf('=');
+                if (idx <= 0) continue;
+                var key = trimmed[..idx].Trim();
+                var val = trimmed[(idx + 1)..].Trim().Trim('"', '\'');
+                if (!string.IsNullOrEmpty(val))
+                    Environment.SetEnvironmentVariable(key, val);
+            }
+            break;
+        }
+        dir = Directory.GetParent(dir)?.FullName;
+    }
+}
 
 public sealed record AskRequest(string Agent, string SectionId, string Question);
 

@@ -1,6 +1,7 @@
 using Anthropic;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 using SpecAgent.Agents.Agents;
 using SpecAgent.Agents.Knowledge;
@@ -33,14 +34,29 @@ public static class ServiceCollectionExtensions
 
         var kbPath = config["Knowledge:Path"] ?? "knowledge";
         if (!Path.IsPathRooted(kbPath)) kbPath = Path.GetFullPath(Path.Combine(contentRoot, kbPath));
-        services.AddSingleton<IKnowledgeBase>(new MarkdownKnowledgeBase(kbPath));
+        services.AddSingleton<IEmbeddingClient, FreeEmbeddingClient>();
+        services.AddSingleton<IKnowledgeBase>(sp => new SemanticKnowledgeBase(
+            kbPath,
+            sp.GetRequiredService<IEmbeddingClient>(),
+            config,
+            sp.GetRequiredService<ILogger<SemanticKnowledgeBase>>()));
 
-        // ANTHROPIC_API_KEY (or another SDK credential source) is read by the SDK itself.
-        services.AddSingleton(_ => new AnthropicClient());
-        services.AddSingleton<ILlmClient, ClaudeLlmClient>();
+        if (string.Equals(config["Llm:Provider"], "Anthropic", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddSingleton(_ => new AnthropicClient());
+            services.AddSingleton<ILlmClient, ClaudeLlmClient>();
+        }
+        else
+        {
+            services.AddSingleton<ILlmClient, OpenAiCompatibleLlmClient>();
+        }
         services.AddSingleton<PromptLibrary>();
         services.AddSingleton<ToolGateway>();
         services.AddSingleton<SupervisorAgent>();
+        services.AddSingleton(sp => new ChecklistAgent(
+            sp.GetRequiredService<ILlmClient>(),
+            sp.GetRequiredService<PromptLibrary>(),
+            kbPath));
         services.AddSingleton<MetaCriticAgent>();
         services.AddSingleton<PatchLoop>();
         services.AddScoped<AuditOrchestrator>();
