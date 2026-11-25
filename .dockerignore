@@ -1,0 +1,16 @@
+.git
+.gitignore
+.env
+**/.env
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+**/TestResults/
+doc1/diagrams/
+doc1/presentation/
+doc1/prototype/tests/
+doc1/prototype/dataset/
+*.md
+!doc1/prototype/knowledge/**/*.md
+!doc1/prototype/src/**/Prompts/**/*.md

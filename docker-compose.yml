@@ -1,0 +1,58 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: specagent-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-specagent}
+      POSTGRES_USER: ${POSTGRES_USER:-specagent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-specagent}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./doc1/prototype/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-specagent} -d ${POSTGRES_DB:-specagent}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: specagent-qdrant
+    restart: unless-stopped
+    ports:
+      - "${QDRANT_HTTP_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_PORT:-6334}:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: specagent-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    ports:
+      - "${API_PORT:-5199}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      EventStore: Postgres
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-specagent};Username=${POSTGRES_USER:-specagent};Password=${POSTGRES_PASSWORD:-specagent}
+      Knowledge__Path: /app/knowledge
+      Qdrant__Host: qdrant
+      Qdrant__Port: 6334
+      MOONSHOT_API_KEY: ${MOONSHOT_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+
+volumes:
+  pgdata:
+  qdrant_data:

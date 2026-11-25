@@ -5,8 +5,10 @@ using SpecAgent.Core.Documents;
 namespace SpecAgent.Ingestion.Parsing;
 
 /// <summary>
-/// Turns a flat stream of lines (with optional heading hints) into numbered sections.
+/// Turns a flat stream of lines (with optional heading hints) into numbered/named sections.
 /// Shared by every parser so all formats produce the same AST shape.
+/// Supports numeric headings ("3", "3.2", "4.3"), named structural sections ("Часть A", "Раздел 1",
+/// "Приложение 1"), and requirement IDs ("Ф-1", "НФ-2", "FR-1", "NFR-3").
 /// </summary>
 public sealed partial class SectionBuilder
 {
@@ -14,6 +16,17 @@ public sealed partial class SectionBuilder
     // "100 000 тенге" or "2. 5" are not mistaken for headings.
     [GeneratedRegex(@"^\s*(\d{1,2}(?:\.\d{1,2}){0,4})\.?\s+(\p{L}.{0,600})$")]
     private static partial Regex NumberedHeading();
+
+    // "Часть A", "Часть B. Требования", "Раздел 1 — Общие положения", "Приложение A: Схема"
+    [GeneratedRegex(@"^\s*((?:Часть|Part|Раздел|Глава|Приложение|Appendix)\s+[A-Za-zА-Яа-яЁё0-9]+)(?:\s*[:.\-—–]\s*(.*)|\s+(\p{L}.*))?$", RegexOptions.IgnoreCase)]
+    private static partial Regex NamedSectionHeading();
+
+    // "Ф-1: Лимит по карте", "* **Ф-1.** Держатель карты...", "НФ-1 Время отклика...", "FR-12 ..."
+    [GeneratedRegex(@"^\s*(?:[\*\-•]\s+)?(?:\*\*)?((?:ФТ|НФТ|БТ|ИБ|Ф|НФ|FR|NFR|BR|REQ|UC|US)-\d+(?:\.\d+)*)(?:\*\*)?(?:\s*[:.\-—–]\s*(?:\*\*)?|\s+)(.+)$", RegexOptions.IgnoreCase)]
+    private static partial Regex RequirementIdHeading();
+
+    [GeneratedRegex(@"\s+")]
+    private static partial Regex MultiSpace();
 
     private readonly List<TzSection> _sections = [];
     private readonly StringBuilder _body = new();
@@ -26,10 +39,40 @@ public sealed partial class SectionBuilder
     public void AddLine(string line, int? headingLevel = null)
     {
         var text = line.TrimEnd();
+
+        // Markdown table rows must never be split as headings.
+        if (text.TrimStart().StartsWith('|'))
+        {
+            _body.AppendLine(text);
+            return;
+        }
+
         if (headingLevel is { } lvl && text.Length > 0)
         {
+            if (TryMatchNamedHeading(text, isExplicitHeading: true, out var namedId, out var namedTitle))
+            {
+                StartSection(namedId, namedTitle, lvl);
+                return;
+            }
+            if (TryMatchRequirementHeading(text, out var reqId, out var reqRest))
+            {
+                AddRequirementSection(reqId, reqRest, lvl);
+                return;
+            }
             var m = NumberedHeading().Match(text);
             StartSection(m.Success ? m.Groups[1].Value : null, m.Success ? m.Groups[2].Value.Trim() : text.Trim(), lvl);
+            return;
+        }
+
+        if (TryMatchNamedHeading(text, isExplicitHeading: false, out var nId, out var nTitle))
+        {
+            StartSection(nId, nTitle, 1);
+            return;
+        }
+
+        if (TryMatchRequirementHeading(text, out var rId, out var rRest))
+        {
+            AddRequirementSection(rId, rRest, 2);
             return;
         }
 
@@ -41,8 +84,7 @@ public sealed partial class SectionBuilder
             var level = id.Count(c => c == '.') + 1;
             // "4.3 Вызов процессинга выполняется синхронно." is a numbered requirement, not a heading:
             // it still becomes its own section so findings can point at "4.3" exactly.
-            var looksLikeItem = rest.EndsWith('.') || rest.Contains(';') || rest.Length > 90;
-            if (!looksLikeItem)
+            if (!LooksLikeItem(rest))
             {
                 StartSection(id, rest, level);
                 return;
@@ -60,13 +102,58 @@ public sealed partial class SectionBuilder
         _body.AppendLine(text);
     }
 
+    private void AddRequirementSection(string id, string rest, int level)
+    {
+        if (!LooksLikeItem(rest))
+        {
+            StartSection(id, rest, level);
+        }
+        else
+        {
+            StartSection(id, "", level);
+            _body.AppendLine(rest);
+        }
+    }
+
+    private static bool LooksLikeItem(string rest) =>
+        rest.EndsWith('.') || rest.Contains(';') || rest.Length > 90;
+
+    private static bool TryMatchNamedHeading(string text, bool isExplicitHeading, out string id, out string title)
+    {
+        var m = NamedSectionHeading().Match(text);
+        if (!m.Success) { id = ""; title = ""; return false; }
+
+        var rawTitle = m.Groups[2].Success ? m.Groups[2].Value.Trim()
+                     : m.Groups[3].Success ? m.Groups[3].Value.Trim()
+                     : "";
+        // Avoid false positives on prose sentences like "Часть B — дочерняя спецификация, на которую ссылается..."
+        if (!isExplicitHeading && (rawTitle.EndsWith('.') || rawTitle.Length > 90))
+        {
+            id = ""; title = ""; return false;
+        }
+
+        id = MultiSpace().Replace(m.Groups[1].Value.Trim(), " ");
+        title = rawTitle;
+        return true;
+    }
+
+    private static bool TryMatchRequirementHeading(string text, out string id, out string rest)
+    {
+        var m = RequirementIdHeading().Match(text);
+        if (!m.Success) { id = ""; rest = ""; return false; }
+
+        id = m.Groups[1].Value.Trim().ToUpperInvariant();
+        rest = m.Groups[2].Value.Trim();
+        return rest.Length > 0;
+    }
+
     private void StartSection(string? id, string title, int level)
     {
         Flush();
         _id = id ?? $"s-{++_auto}";
         _title = title;
         _level = level;
-        _docTitle ??= title;
+        if (_docTitle is null && title.Length > 0) _docTitle = title;
     }
 
     private void Flush()
