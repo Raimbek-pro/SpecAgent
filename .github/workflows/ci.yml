@@ -1,0 +1,66 @@
+name: CI — Build & Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & Test (.NET 10 + PostgreSQL)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: specagent
+          POSTGRES_USER: specagent
+          POSTGRES_PASSWORD: specagent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U specagent -d specagent"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore dependencies
+        run: dotnet restore doc1/prototype/SpecAgent.slnx
+
+      - name: Build solution
+        run: dotnet build doc1/prototype/SpecAgent.slnx --configuration Release --no-restore
+
+      - name: Run tests (unit + PostgreSQL Crash & Resume)
+        env:
+          SPECAGENT_TEST_POSTGRES: Host=localhost;Port=5432;Database=specagent;Username=specagent;Password=specagent
+        run: dotnet test doc1/prototype/SpecAgent.slnx --configuration Release --no-build --verbosity normal
+
+  docker-check:
+    name: Validate Docker Compose & Dockerfile
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate docker-compose.yml
+        run: docker compose config --quiet
+
+      - name: Build API Docker image
+        run: docker build --file Dockerfile --tag specagent-api:ci .
