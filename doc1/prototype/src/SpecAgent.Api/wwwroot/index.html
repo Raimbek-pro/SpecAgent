@@ -3,500 +3,1395 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SpecAgent — Sea Glass ТЗ Auditor</title>
+<title>SpecAgent — FinTech Requirements Workbench</title>
+<link rel="icon" type="image/png" href="/logo.png?v=4">
 <style>
 :root {
-  /* Sea Glass 5 Coastal Palettes */
-  --lagoon-body: rgba(181, 208, 235, 0.42);
-  --lagoon-edge: #D6E9FF;
-  --lagoon-ink:  #2F647C;
+  --chrome:      #f2f3f5;
+  --chrome-deep: #e6e8ec;
+  --editor:      #ffffff;
+  --panel:       #fafbfc;
+  --border:      #dfe2e7;
+  --border-soft: #eceef2;
+  --ink:         #1f2328;
+  --ink-2:       #424a53;
+  --mute:        #656d76;
 
-  --mint-body:   rgba(192, 222, 208, 0.46);
-  --mint-edge:   #E6FFF0;
-  --mint-ink:    #396C5A;
+  --accent:      #0969da;
+  --accent-bg:   #ddf4ff;
+  --blocker:     #cf222e;
+  --blocker-bg:  #ffebe9;
+  --critical:    #bc4c00;
+  --critical-bg: #fff1e5;
+  --major:       #0969da;
+  --major-bg:    #ddf4ff;
+  --minor:       #57606a;
+  --minor-bg:    #eaeef2;
+  --ok:          #1a7f37;
+  --ok-bg:       #dafbe1;
 
-  --rose-body:   rgba(238, 206, 214, 0.48);
-  --rose-edge:   #FFF0F1;
-  --rose-ink:    #963F59;
-
-  --amber-body:  rgba(240, 217, 190, 0.50);
-  --amber-edge:  #FFFCE0;
-  --amber-ink:   #865733;
-
-  --lilac-body:  rgba(225, 205, 232, 0.44);
-  --lilac-edge:  #FBE8F7;
-  --lilac-ink:   #71388B;
-
-  --surface:     rgba(255, 255, 255, 0.62);
-  --ink:         #1D3540;
-  --mute:        #516C78;
-  --line:        rgba(47, 100, 124, 0.14);
+  --hl:          #fff3b0;
+  --hl-on:       #ffd43b;
+  --mono:        "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --sans:        -apple-system, BlinkMacSystemFont, "Inter", "SF Pro Text", "Segoe UI", system-ui, sans-serif;
 }
 
 * { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; overflow: hidden; background: var(--chrome); color: var(--ink); font: 13.5px/1.55 var(--sans); }
 
-body {
-  margin: 0;
-  min-height: 100vh;
-  color: var(--ink);
-  font: 15px/1.58 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
-  background:
-    radial-gradient(circle at 12% 14%, rgba(181, 208, 235, 0.65) 0%, transparent 45%),
-    radial-gradient(circle at 86% 18%, rgba(225, 205, 232, 0.55) 0%, transparent 42%),
-    radial-gradient(circle at 75% 88%, rgba(192, 222, 208, 0.62) 0%, transparent 48%),
-    radial-gradient(circle at 20% 85%, rgba(240, 217, 190, 0.45) 0%, transparent 45%),
-    #EDF4F8;
-  background-attachment: fixed;
-}
-
-/* Sea Glass Surface Primitive */
-.sg {
-  position: relative;
-  backdrop-filter: blur(18px) saturate(145%);
-  -webkit-backdrop-filter: blur(18px) saturate(145%);
-  border: 1.5px solid rgba(255, 255, 255, 0.72);
-  box-shadow:
-    0 10px 30px -10px rgba(47, 100, 124, 0.16),
-    inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.85),
-    inset -1px -1px 0 rgba(47, 100, 124, 0.10);
-  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
-}
-.sg-lagoon { background: var(--lagoon-body); border-color: var(--lagoon-edge); color: var(--lagoon-ink); }
-.sg-mint   { background: var(--mint-body);   border-color: var(--mint-edge);   color: var(--mint-ink); }
-.sg-rose   { background: var(--rose-body);   border-color: var(--rose-edge);   color: var(--rose-ink); }
-.sg-amber  { background: var(--amber-body);  border-color: var(--amber-edge);  color: var(--amber-ink); }
-.sg-lilac  { background: var(--lilac-body);  border-color: var(--lilac-edge);  color: var(--lilac-ink); }
-.sg-clear  { background: var(--surface);     border-color: rgba(255, 255, 255, 0.82); color: var(--ink); }
-
-/* Tactile Capsule Button */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 9px 18px;
-  border-radius: 999px;
-  font: 600 14px/1 inherit;
-  cursor: pointer;
-  text-decoration: none;
-  user-select: none;
-}
-.btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-  box-shadow:
-    0 12px 26px -8px rgba(47, 100, 124, 0.24),
-    inset 1.5px 1.5px 0 rgba(255, 255, 255, 0.95);
-}
-.btn:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow: 0 3px 10px -4px rgba(47, 100, 124, 0.18);
-}
-.btn:disabled { opacity: 0.55; cursor: not-allowed; }
-
-/* Header */
-header {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 24px;
-  background: rgba(244, 249, 252, 0.72);
-  backdrop-filter: blur(20px) saturate(150%);
-  -webkit-backdrop-filter: blur(20px) saturate(150%);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.78);
+/* ── Top Chrome Bar ──────────────────────────────────────────── */
+.topbar {
+  height: 42px;
+  display: flex; align-items: center; gap: 8px; padding: 0 12px;
+  background: var(--chrome); border-bottom: 1px solid var(--border); user-select: none;
 }
 .brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-right: 8px;
+  display: inline-flex; align-items: center; gap: 7px; font-weight: 700; font-size: 14px; letter-spacing: -0.01em;
+  padding: 3px 8px; margin-left: -4px; border-radius: 5px; border: 0; background: transparent; color: var(--ink); cursor: pointer;
 }
-.brand-dot {
-  width: 30px;
-  height: 30px;
-  border-radius: 12px;
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  font-size: 15px;
+.brand:hover, .brand.open { background: var(--chrome-deep); }
+.brand-logo {
+  width: 36px; height: 36px; object-fit: contain; display: block; flex-shrink: 0;
 }
-header h1 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: -0.02em; color: var(--lagoon-ink); }
-.pill {
-  padding: 6px 14px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 600;
-}
-.header-right {
-  margin-left: auto;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-#exports { display: none; gap: 8px; flex-wrap: wrap; }
-#exports.visible { display: flex; }
+.sep { width: 1px; height: 16px; background: var(--border); margin: 0 2px; }
 
-/* Main Split Layout */
-main {
-  display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-  gap: 20px;
-  padding: 20px 24px 32px;
-  max-width: 1680px;
-  margin: 0 auto;
-  align-items: start;
+.btn {
+  height: 26px; padding: 0 10px; border-radius: 5px;
+  border: 1px solid var(--border); background: var(--editor); color: var(--ink);
+  font: 500 12px/1 var(--sans); display: inline-flex; align-items: center; gap: 5px;
+  cursor: pointer; text-decoration: none;
 }
-@media (max-width: 980px) { main { grid-template-columns: 1fr; } }
+.btn:hover:not(:disabled) { background: #f6f8fa; border-color: #c8cdd4; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn.primary { background: #1f2328; color: #fff; border-color: #1f2328; }
+.btn.primary:hover:not(:disabled) { background: #32383f; }
+.btn.accent { background: var(--accent-bg); color: var(--accent); border-color: #b6e3ff; }
+.btn.ok { background: var(--ok-bg); color: var(--ok); border-color: #aceebb; }
 
-/* Drag & Drop Zone */
-#dropzone {
-  border-radius: 24px;
-  padding: 28px 24px;
-  text-align: center;
-  cursor: pointer;
-  margin-bottom: 18px;
-  border: 2px dashed rgba(47, 100, 124, 0.30);
+.topbar-right { margin-left: auto; display: flex; align-items: center; gap: 7px; }
+.score-chip {
+  height: 24px; padding: 0 9px; border-radius: 4px;
+  font: 600 11.5px/1 var(--mono); display: none; align-items: center; gap: 6px;
+  border: 1px solid transparent; cursor: pointer;
 }
-#dropzone.dragover {
-  background: var(--mint-body);
-  border-color: var(--mint-ink);
-  transform: scale(1.008);
-}
-#dropzone h3 { margin: 0 0 6px; font-size: 17px; color: var(--lagoon-ink); }
-#dropzone p { margin: 0 0 14px; font-size: 14px; color: var(--mute); }
-#file-name { font-weight: 600; color: var(--mint-ink); margin-left: 8px; }
+.score-chip.visible { display: inline-flex; }
+.score-chip.nogo { background: var(--blocker-bg); color: var(--blocker); border-color: #ffcecb; }
+.score-chip.warn { background: var(--critical-bg); color: var(--critical); border-color: #ffd8b5; }
+.score-chip.go   { background: var(--ok-bg); color: var(--ok); border-color: #aceebb; }
+#exports { display: none; gap: 6px; }
+#exports.visible { display: inline-flex; }
 input[type=file] { display: none; }
 
-/* Document Pane (Markdown Rendered) */
-#doc-panel {
-  border-radius: 26px;
-  padding: 24px 28px;
-  min-height: calc(100vh - 140px);
+/* ── Split Workbench + Collapsible Xcode Navigator Sidebar ───── */
+.workbench { display: flex; height: calc(100vh - 42px - 26px); width: 100%; overflow: hidden; }
+
+.sidebar {
+  width: 0; overflow: hidden; background: var(--chrome);
+  border-right: 0 solid var(--border); display: flex; flex-direction: column; flex-shrink: 0;
+  transition: width 0.16s ease;
 }
+.sidebar.open { width: 264px; border-right-width: 1px; }
+.sidebar-head {
+  height: 34px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 10px 0 12px; border-bottom: 1px solid var(--border);
+  font: 700 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--mute);
+  white-space: nowrap;
+}
+.icon-btn {
+  width: 22px; height: 22px; border: 0; background: transparent; border-radius: 4px;
+  color: var(--mute); font: 500 16px/1 var(--sans); cursor: pointer;
+  display: inline-grid; place-items: center;
+}
+.icon-btn:hover { background: var(--chrome-deep); color: var(--ink); }
+
+.sidebar-list { flex: 1; overflow-y: auto; padding: 6px; }
+
+/* Xcode Project Tree Folder & Generated Files */
+.proj-group { margin-bottom: 4px; }
+.proj-folder {
+  width: 100%; text-align: left; border: 1px solid transparent; border-radius: 6px;
+  background: transparent; padding: 7px 8px; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  color: var(--ink); font-family: var(--sans);
+}
+.proj-folder:hover { background: rgba(255,255,255,0.65); }
+.proj-folder.active { background: #ffffff; border-color: #d0d5dd; box-shadow: 0 1px 2px rgba(31,35,40,0.04); }
+.proj-left { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.proj-chev { font-size: 10px; color: var(--mute); width: 10px; flex-shrink: 0; }
+.proj-name { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.proj-sub  { font-size: 11px; color: var(--mute); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 16px; }
+
+.proj-files { padding: 3px 0 4px 18px; display: none; }
+.proj-group.expanded .proj-files { display: block; }
+.proj-file {
+  width: 100%; text-align: left; border: 0; border-radius: 5px;
+  background: transparent; padding: 5px 8px; margin-bottom: 1px; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  font: 500 12px/1.2 var(--mono); color: var(--ink-2);
+}
+.proj-file:hover { background: rgba(255,255,255,0.7); color: var(--ink); }
+.proj-file.active { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+.proj-file .fdesc { font-family: var(--sans); font-size: 10.5px; color: var(--mute); }
+
+.sidebar-foot {
+  padding: 8px; border-top: 1px solid var(--border); background: var(--chrome); flex-shrink: 0;
+}
+.sidebar-settings-btn {
+  width: 100%; height: 32px; padding: 0 10px; border-radius: 6px;
+  border: 1px solid var(--border); background: #ffffff; color: var(--ink);
+  font: 600 12.5px/1 var(--sans); cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+}
+.sidebar-settings-btn:hover { background: var(--panel); border-color: #c1c7d0; }
+.role-pill { font: 600 10.5px/1 var(--mono); padding: 2px 6px; border-radius: 4px; background: var(--accent-bg); color: var(--accent); }
+.role-pill.ro { background: var(--minor-bg); color: var(--minor); }
+
+/* ── Settings Modal (Xcode / Zed Preferences) ───────────────── */
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(31, 35, 40, 0.35);
+  display: none; align-items: center; justify-content: center; z-index: 100; padding: 20px;
+}
+.modal-backdrop.open { display: flex; }
+.modal {
+  width: 100%; max-width: 720px; max-height: 86vh; background: #ffffff;
+  border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 18px 48px rgba(31, 35, 40, 0.18);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.modal-head {
+  padding: 12px 16px; background: var(--chrome); border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+}
+.modal-title { font-size: 14.5px; font-weight: 700; color: var(--ink); }
+.role-switch { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: #ffffff; }
+.role-switch button {
+  border: 0; background: transparent; padding: 4px 10px; font: 600 11.5px/1 var(--sans); color: var(--mute); cursor: pointer;
+}
+.role-switch button.active { background: var(--accent); color: #ffffff; }
+.modal-body { flex: 1; overflow-y: auto; padding: 16px 18px; }
+.modal-foot {
+  padding: 10px 16px; background: var(--panel); border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+.ro-banner {
+  display: none; padding: 8px 12px; margin-bottom: 14px; border-radius: 6px;
+  background: #fff8e6; border: 1px solid #f0d58c; color: #7a5200; font-size: 12.5px;
+}
+.ro-banner.visible { display: block; }
+.set-sec { margin-bottom: 18px; padding-bottom: 16px; border-bottom: 1px solid var(--border-soft); }
+.set-sec:last-child { border-bottom: 0; margin-bottom: 0; padding-bottom: 0; }
+.set-sec h3 { margin: 0 0 4px; font-size: 13.5px; font-weight: 700; color: var(--ink); }
+.set-sec .set-sub { margin: 0 0 10px; font-size: 12px; color: var(--mute); }
+.set-grid { display: flex; flex-direction: column; gap: 12px; }
+.set-field { display: flex; flex-direction: column; gap: 4px; }
+.set-field label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; color: var(--ink); }
+.info-ico {
+  display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%;
+  border: 1px solid #c5cbd3; color: var(--mute); font: 700 10px/1 var(--sans);
+  cursor: help; flex-shrink: 0;
+}
+.set-hint { font-size: 11.5px; line-height: 1.45; color: var(--mute); }
+.set-field input, .set-field select {
+  height: 32px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--border);
+  background: #ffffff; color: var(--ink); font: 12.5px var(--sans);
+}
+.set-field input:disabled, .set-field select:disabled { background: var(--panel); color: var(--mute); cursor: not-allowed; }
+.pii-grid { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 8px; }
+.pii-chk { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink); cursor: pointer; }
+.kb-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.kb-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border-soft); background: var(--panel);
+  font-size: 12.5px;
+}
+.kb-name { font-family: var(--mono); font-weight: 600; color: var(--ink); }
+.kb-meta { font-family: var(--mono); font-size: 11px; color: var(--mute); margin-left: 8px; }
+
+/* ── Main 2-Pane Editor ──────────────────────────────────────── */
+.pane { display: flex; flex-direction: column; min-width: 280px; height: 100%; overflow: hidden; }
+.pane-left  { width: 49%; background: var(--editor); }
+.pane-right { flex: 1; background: var(--editor); }
+.resizer { width: 4px; cursor: col-resize; background: var(--border); flex-shrink: 0; transition: background 0.12s; }
+.resizer:hover, .resizer.dragging { background: var(--accent); }
+
+.tabbar {
+  height: 34px; display: flex; align-items: stretch;
+  background: var(--chrome); border-bottom: 1px solid var(--border);
+  overflow-x: auto; flex-shrink: 0; user-select: none;
+}
+.tab {
+  display: inline-flex; align-items: center; gap: 7px; padding: 0 10px 0 13px;
+  font: 500 12.5px/1 var(--sans); color: var(--mute); background: transparent;
+  border: 0; border-right: 1px solid var(--border); cursor: pointer; white-space: nowrap;
+}
+.tab:hover { color: var(--ink); background: rgba(255,255,255,0.55); }
+.tab.active { color: var(--ink); background: var(--editor); font-weight: 600; box-shadow: inset 0 2px 0 var(--accent); }
+.tab-close {
+  width: 16px; height: 16px; border: 0; background: transparent; border-radius: 3px;
+  display: inline-grid; place-items: center; font: 600 13px/1 var(--sans); color: var(--mute); cursor: pointer;
+}
+.tab-close:hover { background: var(--chrome-deep); color: var(--ink); }
+.tab-add {
+  width: 34px; border: 0; border-right: 1px solid var(--border); background: transparent;
+  color: var(--ink-2); font: 500 18px/1 var(--sans); cursor: pointer;
+  display: inline-grid; place-items: center; flex-shrink: 0;
+}
+.tab-add:hover { background: rgba(255,255,255,0.7); color: var(--accent); }
+
+/* Right Pane File Header (Clean single active file bar — no 4 confusing tabs!) */
+.right-filebar {
+  height: 34px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 14px; background: var(--chrome); border-bottom: 1px solid var(--border);
+  flex-shrink: 0; user-select: none;
+}
+.right-filename {
+  display: inline-flex; align-items: center; gap: 8px;
+  font: 600 12.5px/1 var(--mono); color: var(--ink);
+}
+.right-quick { display: inline-flex; align-items: center; gap: 4px; }
+.qbtn {
+  height: 22px; padding: 0 8px; border-radius: 4px; border: 1px solid transparent;
+  background: transparent; color: var(--mute); font: 600 11.5px/1 var(--sans); cursor: pointer;
+}
+.qbtn:hover { background: rgba(255,255,255,0.7); color: var(--ink); }
+.qbtn.active { background: #ffffff; color: var(--ink); border-color: var(--border); }
+
+.crumbbar {
+  height: 29px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 0 14px; font: 12px/1 var(--mono); color: var(--mute);
+  background: var(--editor); border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0; overflow-x: auto; white-space: nowrap;
+}
+.scroll { flex: 1; overflow-y: auto; padding: 18px 22px 36px; }
+
+.pdf-frame { width: 100%; height: 100%; border: 0; display: block; background: #525659; }
+.scroll.flush { padding: 0; overflow: hidden; }
+.clean-paper {
+  max-width: 780px; margin: 16px auto 32px; padding: 34px 42px;
+  background: #ffffff; border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(31,35,40,0.05);
+}
+.view-switch { display: inline-flex; border: 1px solid var(--border); border-radius: 5px; overflow: hidden; background: #ffffff; }
+.view-switch button {
+  height: 22px; padding: 0 9px; border: 0; background: transparent; color: var(--mute);
+  font: 600 11.5px/1 var(--sans); cursor: pointer;
+}
+.view-switch button.active { background: #1f2328; color: #ffffff; }
+
+/* ── New Tab Drag & Drop Canvas ──────────────────────────────── */
+.drop-wrap {
+  max-width: 540px; margin: 28px auto 36px; display: flex; flex-direction: column; align-items: center;
+}
+.drop-mascot {
+  width: 340px; max-width: 82%; height: auto; display: block;
+  margin-left: 56px; margin-bottom: -18px; position: relative; z-index: 2; pointer-events: none;
+}
+.new-tab-drop {
+  width: 100%; margin: 0; padding: 38px 28px 34px; position: relative; z-index: 1;
+  border-radius: 10px; border: 2px dashed #c8cdd4; background: var(--panel);
+  text-align: center; cursor: pointer; transition: all 0.15s ease;
+}
+.new-tab-drop.dragover { border-color: var(--accent); background: var(--accent-bg); }
+.new-tab-drop h2 { margin: 0 0 8px; font-size: 16.5px; color: var(--ink); }
+.new-tab-drop p  { margin: 0 0 18px; font-size: 13px; color: var(--mute); }
+
+/* ── Document Sections with Gutter ───────────────────────────── */
 .sec {
-  margin: 0 0 22px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--line);
+  display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px;
+  padding: 0 0 14px; margin-bottom: 14px; border-bottom: 1px solid var(--border-soft);
 }
 .sec:last-child { border-bottom: 0; }
-.sec-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin: 0 0 10px;
-}
-.sec-id {
-  font: 700 12px/1 "SF Mono", Menlo, monospace;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--lagoon-body);
-  color: var(--lagoon-ink);
-}
-.sec h3 { margin: 0; font-size: 17px; font-weight: 700; color: var(--ink); }
+.gutter { text-align: right; font: 500 11.5px/1.7 var(--mono); color: #8c959f; padding-top: 2px; user-select: none; }
+.sec-title { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin: 0 0 7px; font-size: 15px; font-weight: 700; color: var(--ink); }
 
-/* Rendered Markdown Typography */
-.md p { margin: 0 0 8px; }
-.md ul, .md ol { margin: 4px 0 10px; padding-left: 22px; }
-.md li { margin-bottom: 4px; }
-.md code {
-  font-family: "SF Mono", Menlo, Consolas, monospace;
-  font-size: 0.88em;
-  padding: 2px 6px;
+/* ── Right Pane: Pure Finished Document + Calm Solid Green Improved Sections ─ */
+.sec.unchanged { opacity: 1; }
+.sec.has-fix {
+  background: #ffffff;
+  border: 1px solid #9bd1ae;
+  padding: 12px 14px 12px 8px;
+  margin-left: -10px;
   border-radius: 6px;
-  background: rgba(47, 100, 124, 0.09);
-  color: var(--lagoon-ink);
+  transition: background 0.35s ease;
 }
-.md pre.codeblock {
-  margin: 8px 0 12px;
-  padding: 12px 14px;
-  border-radius: 14px;
-  background: rgba(29, 53, 64, 0.06);
-  border: 1px solid var(--line);
-  overflow-x: auto;
-  font: 13px/1.45 "SF Mono", Menlo, monospace;
-  white-space: pre-wrap;
+.sec.has-note {
+  background: #ffffff;
+  border: 1px solid #b6ddc4;
+  padding: 12px 14px 12px 8px;
+  margin-left: -10px;
+  border-radius: 6px;
+  transition: background 0.35s ease;
 }
-.md table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 10px 0 14px;
-  font-size: 13.5px;
-  border-radius: 14px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.55);
-  border: 1px solid var(--line);
-}
-.md th {
-  text-align: left;
-  padding: 8px 10px;
-  background: rgba(181, 208, 235, 0.35);
-  color: var(--lagoon-ink);
-  font-weight: 700;
-  border-bottom: 1px solid var(--line);
-}
-.md td {
-  padding: 7px 10px;
-  border-bottom: 1px solid rgba(47, 100, 124, 0.08);
-  vertical-align: top;
-}
-.md hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+.sec.flash { background: #eef9f2; }
 
-mark {
-  background: rgba(240, 217, 190, 0.85);
-  color: #5A3516;
-  padding: 1px 4px;
-  border-radius: 5px;
+.clean-fixed-body { color: var(--ink); font-size: 14px; line-height: 1.6; }
+.clean-expand { margin-top: 8px; }
+.clean-expand > summary {
   cursor: pointer;
-  border-bottom: 2px solid #D99B4E;
-}
-mark.on {
-  background: rgba(238, 178, 192, 0.92);
-  color: #6B1F37;
-  border-bottom-color: #963F59;
-  box-shadow: 0 0 0 3px rgba(150, 63, 89, 0.22);
-}
-
-/* Right Side: Trace & Cards */
-.section-label {
-  font-size: 12px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  color: var(--mute);
-  margin: 4px 0 10px 6px;
-}
-#trace-box {
-  border-radius: 22px;
-  padding: 12px 14px;
-  margin-bottom: 20px;
-}
-#trace {
-  list-style: none;
-  padding: 0;
-  margin: 0;
   font-size: 12.5px;
-  max-height: 220px;
-  overflow-y: auto;
-}
-#trace li {
-  padding: 5px 6px;
-  border-bottom: 1px solid rgba(113, 56, 139, 0.10);
-  display: flex;
-  gap: 6px;
-  align-items: baseline;
-}
-#trace li:last-child { border-bottom: 0; }
-#trace .ag { font-weight: 700; white-space: nowrap; }
-#trace .tp { font-family: "SF Mono", Menlo, monospace; font-size: 11px; opacity: 0.78; white-space: nowrap; }
-
-/* Finding Cards */
-.card {
-  border-radius: 22px;
-  padding: 16px 18px;
-  margin-bottom: 14px;
-  cursor: pointer;
-}
-.card:hover { transform: translateY(-2px); }
-.card-top {
-  display: flex;
+  font-weight: 500;
+  color: #246b3b;
+  padding: 3px 0;
+  user-select: none;
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: 6px;
 }
-.sev-badge {
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.65);
+.clean-expand > summary:hover { color: var(--ink); }
+.clean-expand-inner { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-soft); }
+
+.finding-callout {
+  padding: 4px 0 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-soft);
+  font-size: 14px;
+  line-height: 1.58;
 }
-.card-title { font-size: 16px; font-weight: 700; margin: 0 0 6px; }
-.card-desc { font-size: 14px; margin: 0 0 8px; opacity: 0.92; }
-.card-meta { font-size: 12px; opacity: 0.78; margin-bottom: 8px; }
-.card details {
-  margin-top: 8px;
-  padding: 8px 12px;
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.52);
+.finding-callout:last-of-type { border-bottom: 0; margin-bottom: 4px; }
+.callout-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.callout-heading { font-size: 14.5px; font-weight: 650; color: var(--ink); }
+
+.diff-sq {
+  padding: 10px 13px;
+  border-radius: 3px;
+  margin-bottom: 7px;
+  font-size: 14px;
+  line-height: 1.58;
+}
+.diff-sq.good {
+  background: #f4fbf6;
+  border: 1px solid #cce6d4;
   color: var(--ink);
+}
+.diff-sq.bad {
+  background: #fff7f7;
+  border: 1px solid #f2d0ce;
+  color: var(--ink-2);
+}
+.diff-sq-lbl {
+  display: block;
+  font: 600 11.5px/1.2 var(--sans);
+  margin-bottom: 4px;
+}
+.diff-sq.good .diff-sq-lbl { color: #246b3b; }
+.diff-sq.bad  .diff-sq-lbl { color: #a83238; }
+
+.explain-toggle {
+  margin-top: 6px;
   font-size: 13.5px;
+  color: var(--ink-2);
 }
-.card summary { font-weight: 600; cursor: pointer; }
-.diff { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
-@media (max-width: 1200px) { .diff { grid-template-columns: 1fr; } }
-.diff-col {
-  padding: 10px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid var(--line);
-  font-size: 12.5px;
-}
-.diff-col b { display: block; font-size: 11px; text-transform: uppercase; margin-bottom: 4px; color: var(--mute); }
-.diff-col pre, .gherkin pre {
-  white-space: pre-wrap;
-  margin: 0;
-  font: 12.5px/1.45 "SF Mono", Menlo, monospace;
-}
-.gherkin {
-  margin-top: 8px;
-  padding: 10px;
-  border-radius: 12px;
-  background: rgba(192, 222, 208, 0.35);
-  color: var(--mint-ink);
-}
-.ask {
-  display: flex;
-  gap: 8px;
-  margin-top: 10px;
-}
-.ask input {
-  flex: 1;
-  border: 1px solid rgba(47, 100, 124, 0.22);
-  border-radius: 999px;
-  padding: 7px 14px;
-  background: rgba(255, 255, 255, 0.78);
-  color: var(--ink);
-  font: 13px inherit;
-  outline: none;
-}
-.ask-reply {
-  margin-top: 8px;
-  padding: 8px 12px;
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.75);
-  color: var(--ink);
+.explain-toggle summary {
+  cursor: pointer;
   font-size: 13px;
+  font-weight: 500;
+  color: var(--mute);
+  padding: 3px 0;
+  user-select: none;
 }
-.empty { color: var(--mute); font-size: 14px; }
+.explain-toggle summary:hover { color: var(--ink); }
+.explain-body {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 3px;
+  background: #f8f9fb;
+  border: 1px solid var(--border-soft);
+}
+.explain-body p { margin: 0 0 8px; font-size: 13.5px; line-height: 1.55; color: var(--ink); }
+.explain-body p:last-child { margin-bottom: 0; }
+.explain-meta { font: 11.5px/1.4 var(--mono); color: var(--mute); margin-top: 6px; }
+
+.sev { font: 700 10.5px/1 var(--mono); text-transform: uppercase; padding: 2px 6px; border-radius: 3px; }
+.sev.Blocker  { background: var(--blocker-bg);  color: var(--blocker); }
+.sev.Critical { background: var(--critical-bg); color: var(--critical); }
+.sev.Major    { background: var(--major-bg);    color: var(--major); }
+.sev.Minor    { background: var(--minor-bg);    color: var(--minor); }
+.sev.Ok       { background: var(--ok-bg);       color: var(--ok); }
+
+.inline-details {
+  margin-top: 8px; padding: 6px 9px; border-radius: 5px;
+  background: #f6f8fa; border: 1px solid var(--border-soft); font-size: 12px;
+}
+.inline-details summary { font-weight: 600; cursor: pointer; color: var(--ink-2); }
+.inline-details pre { white-space: pre-wrap; margin: 6px 0 0; font: 11.5px/1.45 var(--mono); }
+
+.ask { display: flex; gap: 6px; margin-top: 8px; }
+.ask input { flex: 1; height: 26px; padding: 0 9px; border-radius: 5px; border: 1px solid var(--border); font: 12px var(--sans); outline: none; }
+.ask input:focus { border-color: var(--accent); }
+.ask-reply { margin-top: 6px; padding: 7px 9px; border-radius: 5px; background: var(--accent-bg); font-size: 12px; }
+
+/* Score Summary Strip at top of fixed.md */
+.score-strip {
+  padding: 12px 14px; margin-bottom: 16px; border-radius: 6px;
+  background: var(--panel); border: 1px solid var(--border); font-size: 13px; line-height: 1.5;
+}
+.score-strip-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.score-strip-meta { font: 11.5px/1.4 var(--mono); color: var(--mute); margin-top: 3px; }
+.score-strip-desc { margin: 8px 0 0; color: var(--ink); font-size: 13px; line-height: 1.55; }
+.score-strip-risks { margin: 6px 0 0; padding-left: 18px; color: var(--ink-2); font-size: 12.5px; line-height: 1.48; }
+.score-strip-risks li { margin-bottom: 2px; }
+
+/* Markdown Typography */
+.md h1 { font-size: 19px; margin: 4px 0 10px; color: var(--ink); border-bottom: 1px solid var(--border); padding-bottom: 5px; }
+.md h2 { font-size: 16px; margin: 14px 0 7px; color: var(--ink); }
+.md h3 { font-size: 14px; margin: 10px 0 5px; color: var(--ink); }
+.md h4 { font-size: 13px; margin: 8px 0 4px; }
+.md p  { margin: 0 0 7px; color: var(--ink); }
+.md ul, .md ol { margin: 4px 0 9px; padding-left: 20px; }
+.md li { margin-bottom: 3px; }
+.md blockquote { margin: 7px 0; padding: 6px 12px; border-left: 3px solid var(--border); color: var(--ink-2); background: #f6f8fa; }
+.md code { font: 12px/1.4 var(--mono); padding: 1px 5px; border-radius: 4px; background: #f0f2f5; color: #0550ae; }
+.md pre.codeblock { margin: 7px 0 10px; padding: 9px 11px; border-radius: 5px; background: #f6f8fa; border: 1px solid var(--border); font: 11.5px/1.48 var(--mono); white-space: pre-wrap; overflow-x: auto; }
+.md table { width: 100%; border-collapse: collapse; margin: 7px 0 11px; font-size: 12.5px; border: 1px solid var(--border); }
+.md th { text-align: left; padding: 5px 8px; background: #f6f8fa; font-weight: 600; border: 1px solid var(--border); }
+.md td { padding: 5px 8px; border: 1px solid var(--border-soft); vertical-align: top; }
+.md hr { border: 0; border-top: 1px solid var(--border); margin: 10px 0; }
+
+/* Left Pane: Flagged Sections in Calm Solid Red Border (symmetric with Green on Right) */
+.sec.has-issue {
+  background: #ffffff;
+  border: 1px solid #e3a8a8;
+  padding: 12px 14px 12px 8px;
+  margin-left: -10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+.sec.has-issue:hover { background: #fffafa; }
+.left-err-head {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  margin-bottom: 6px; font-size: 13px; font-weight: 650; color: var(--ink);
+}
+
+mark { background: transparent; color: inherit; cursor: pointer; }
+mark.on { background: #fff0f0; border-radius: 3px; }
+
+/* Live Progress Stepper (5 clear stages + agent pills) */
+.stages-card {
+  border: 1px solid var(--border); border-radius: 8px; background: #ffffff;
+  padding: 14px 16px; margin-bottom: 14px;
+}
+.stages-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 10px; }
+.stages-title { font-size: 14px; font-weight: 700; color: var(--ink); }
+.stages-pct { font: 600 12px/1 var(--mono); color: var(--accent); }
+.stages-bar { height: 5px; border-radius: 99px; background: var(--chrome-deep); overflow: hidden; margin-bottom: 14px; }
+.stages-bar-fill { height: 100%; background: var(--accent); border-radius: 99px; transition: width 0.3s ease; }
+.stage-list { display: flex; flex-direction: column; gap: 10px; }
+.stage-row { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; }
+.stage-ico {
+  width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+  font: 700 11px/1 var(--sans); margin-top: 1px;
+  background: var(--chrome-deep); color: var(--mute);
+}
+.stage-row.done .stage-ico { background: var(--ok-bg); color: var(--ok); border: 1px solid #aceebb; }
+.stage-row.active .stage-ico { background: var(--accent-bg); color: var(--accent); border: 1px solid #b6e3ff; animation: pulse 1.3s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.45; } }
+.stage-name { font-size: 13px; font-weight: 650; color: var(--ink); }
+.stage-row.pending .stage-name { color: var(--mute); font-weight: 500; }
+.stage-desc { font-size: 12px; color: var(--ink-2); margin-top: 2px; line-height: 1.45; }
+.stage-pills { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.agent-pill {
+  font: 600 11px/1 var(--mono); padding: 3px 7px; border-radius: 4px;
+  background: var(--panel); border: 1px solid var(--border); color: var(--mute);
+}
+.agent-pill.run { background: var(--accent-bg); border-color: #b6e3ff; color: var(--accent); }
+.agent-pill.ok  { background: var(--ok-bg); border-color: #aceebb; color: var(--ok); }
+
+/* Trace log */
+.trace-list { list-style: none; padding: 0; margin: 0; font: 12px/1.45 var(--mono); }
+.trace-list li { display: grid; grid-template-columns: 54px 165px 1fr; gap: 8px; padding: 5px 4px; border-bottom: 1px solid var(--border-soft); align-items: baseline; }
+.trace-tm { color: var(--mute); }
+.trace-ev { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trace-ev.ok  { color: var(--ok); }
+.trace-ev.err { color: var(--blocker); }
+.trace-msg { color: var(--ink-2); word-break: break-word; font-family: var(--sans); }
+
+/* Status bar */
+.statusbar {
+  height: 26px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 12px; background: var(--chrome); border-top: 1px solid var(--border);
+  font: 11.5px/1 var(--mono); color: var(--mute); user-select: none;
+}
+.sb-group { display: flex; align-items: center; gap: 12px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); display: inline-block; margin-right: 5px; }
+.dot.run { background: var(--critical); }
+.empty { color: var(--mute); font-size: 13px; }
 </style>
 </head>
 <body>
 
-<header>
-  <div class="brand">
-    <div class="brand-dot sg sg-lagoon">S</div>
-    <h1>SpecAgent</h1>
-  </div>
-  <span id="status" class="pill sg sg-clear empty">Готов к проверке ТЗ</span>
-  <div class="header-right">
-    <span id="score" class="pill sg sg-lagoon" style="display:none"></span>
-    <div id="exports">
-      <a id="dl-report" class="btn sg sg-lagoon" download>📄 Скачать отчёт (.md)</a>
-      <a id="dl-fixed" class="btn sg sg-mint" download>✨ Скачать исправленное ТЗ (.md)</a>
-    </div>
-  </div>
+<header class="topbar">
+  <button type="button" id="brand-toggle" class="brand" title="Открыть / скрыть панель проектов и файлов">
+    <img src="/logo.png?v=4" class="brand-logo" alt="SpecAgent">SpecAgent
+    <span style="font-size:11px;color:var(--mute);margin-left:2px">☰</span>
+  </button>
+  <span class="sep"></span>
+  <button type="button" id="btn-new-tab" class="btn">+ Новое ТЗ</button>
+  <input type="file" id="file" accept=".docx,.pdf,.md,.txt">
+
+  <div class="topbar-right"></div>
 </header>
 
-<main>
-  <div>
-    <div id="dropzone" class="sg sg-clear">
-      <h3>Перетащите файл ТЗ сюда (Drag &amp; Drop)</h3>
-      <p>Поддерживаются <b>.md</b>, <b>.docx</b>, <b>.pdf</b> · PII маскируется автоматически до отправки в AI</p>
-      <input type="file" id="file" accept=".docx,.pdf,.md,.txt">
-      <button type="button" id="pick" class="btn sg sg-lagoon">Выбрать файл</button>
-      <button type="button" id="go" class="btn sg sg-mint" disabled>🚀 Проверить ТЗ</button>
-      <span id="file-name"></span>
+<div class="workbench">
+  <!-- XCODE PROJECT NAVIGATOR SIDEBAR (toggled by clicking SpecAgent) -->
+  <nav class="sidebar" id="history-sidebar">
+    <div class="sidebar-head">
+      <span>Проекты и файлы</span>
+      <button type="button" class="icon-btn" id="sidebar-close" title="Скрыть">×</button>
     </div>
-
-    <section id="doc-panel" class="sg sg-clear">
-      <div id="doc"><p class="empty">Загрузите спецификацию выше — здесь появится красиво отформатированный Markdown с подсветкой всех найденных дефектов.</p></div>
-    </section>
-  </div>
-
-  <aside>
-    <div class="section-label">Live Trace агентов (Session Event Log)</div>
-    <div id="trace-box" class="sg sg-lilac">
-      <ol id="trace"><li class="empty">Ожидание запуска аудита…</li></ol>
+    <div class="sidebar-list" id="history-list">
+      <p class="empty" style="padding:8px">Загрузка…</p>
     </div>
+    <div class="sidebar-foot">
+      <button type="button" class="sidebar-settings-btn" id="btn-settings">
+        <span>⚙ Настройки и RAG</span>
+        <span class="role-pill" id="sidebar-role-pill">Admin</span>
+      </button>
+    </div>
+  </nav>
 
-    <div class="section-label">Найденные замечания и патчи</div>
-    <div id="cards"><p class="empty">После проверки здесь появятся карточки дефектов (Blocker / Critical / Major / Minor) с патчами и Gherkin-сценариями.</p></div>
+  <!-- LEFT PANE: ORIGINAL ТЗ (closeable tabs + [+]) -->
+  <section class="pane pane-left" id="pane-left">
+    <div class="tabbar" id="left-tabbar"></div>
+    <div class="crumbbar">
+      <span id="left-crumb">SpecAgent › исходное ТЗ</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="left-meta"></span>
+        <div class="view-switch" id="left-view-switch" style="display:none">
+          <button type="button" data-lmode="audit" class="active">Разбор</button>
+          <button type="button" data-lmode="clean" id="left-clean-btn">PDF</button>
+        </div>
+      </div>
+    </div>
+    <div class="scroll" id="left-scroll"></div>
+  </section>
+
+  <div class="resizer" id="resizer"></div>
+
+  <!-- RIGHT PANE: GENERATED OUTPUT FILE (fixed by default | report.md | audit.log via sidebar) -->
+  <aside class="pane pane-right">
+    <div class="right-filebar">
+      <div style="display:flex;align-items:center;gap:10px;min-width:0">
+        <span class="right-filename" id="right-filename">fixed.md</span>
+        <div class="view-switch" id="right-view-switch" style="display:none">
+          <button type="button" data-rmode="audit" class="active">Разбор правок</button>
+          <button type="button" data-rmode="clean" id="right-clean-btn">Чистый файл</button>
+        </div>
+      </div>
+      <a id="right-dl" class="btn ok" style="display:none;height:24px;font-size:11.5px;padding:0 9px" download>↓ скачать</a>
+    </div>
+    <div class="crumbbar">
+      <span id="right-crumb">Исправленная версия + все замечания</span>
+      <span id="right-meta"></span>
+    </div>
+    <div class="scroll" id="right-scroll"></div>
   </aside>
-</main>
+</div>
+
+<footer class="statusbar">
+  <div class="sb-group">
+    <span><span class="dot" id="sb-dot"></span><span id="sb-status">Готов</span></span>
+    <span id="sb-stage"></span>
+  </div>
+  <div class="sb-group">
+    <span id="sb-mode">0 токенов · PostgreSQL Cache</span>
+    <span>ISO/IEC/IEEE 29148</span>
+    <span id="sb-model">Kimi K3 · Qdrant · Postgres</span>
+  </div>
+</footer>
+
+<!-- SETTINGS & RAG KNOWLEDGE BASE MODAL -->
+<div class="modal-backdrop" id="settings-modal">
+  <div class="modal" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <span class="modal-title">Настройки SpecAgent и База знаний (RAG)</span>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div class="role-switch" title="Демонстрация ролевой модели (RBAC)">
+          <button type="button" id="role-admin" class="active">Администратор</button>
+          <button type="button" id="role-analyst">Аналитик</button>
+        </div>
+        <button type="button" class="icon-btn" id="settings-close" title="Закрыть">×</button>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="ro-banner" id="ro-banner">
+        Режим аналитика (только чтение): изменять политики автоисправления, PII, модель LLM и документы базы знаний RAG может только администратор банка.
+      </div>
+
+      <div class="set-sec">
+        <h3>1. Политика автоисправления (Patches)</h3>
+        <p class="set-sub">Определяет, какие разделы ТЗ агент переписывает автоматически до готового вида.</p>
+        <div class="set-grid">
+          <div class="set-field">
+            <label for="set-minsev">Минимальный уровень (MinSeverity) <span class="info-ico" title="Порог важности замечаний для автоисправления">i</span></label>
+            <select id="set-minsev" class="admin-ctrl">
+              <option value="Minor">Minor (исправлять всё)</option>
+              <option value="Major">Major (Major + Critical + Blocker)</option>
+              <option value="Critical">Critical (Critical + Blocker)</option>
+              <option value="Blocker">Blocker (только блокеры)</option>
+            </select>
+            <span class="set-hint">С какого уровня критичности агент переписывает раздел. При «Minor» исправляются абсолютно все проблемные разделы документа.</span>
+          </div>
+          <div class="set-field">
+            <label for="set-maxpatches">Максимум разделов (MaxPatches) <span class="info-ico" title="Лимит разделов на один запуск аудита">i</span></label>
+            <input type="number" id="set-maxpatches" min="1" max="50" value="30" class="admin-ctrl">
+            <span class="set-hint">Сколько максимум проблемных разделов переписать за один запуск. Защищает от лишнего расхода токенов на огромных документах (30 хватает на всё ТЗ целиком).</span>
+          </div>
+          <div class="set-field">
+            <label for="set-maxrounds">Раундов верификации (MaxRounds) <span class="info-ico" title="Цикл Writer → Verifier для контроля качества правки">i</span></label>
+            <input type="number" id="set-maxrounds" min="1" max="3" value="2" class="admin-ctrl">
+            <span class="set-hint">Сколько попыток даётся агенту-писателю исправить раздел, если агент-верификатор нашёл несостыковку с соседними разделами. 2 — оптимальный баланс качества и скорости.</span>
+          </div>
+          <div class="set-field">
+            <label for="set-parallel">Параллельность (Parallelism) <span class="info-ico" title="Одновременные запросы к LLM">i</span></label>
+            <input type="number" id="set-parallel" min="1" max="10" value="6" class="admin-ctrl">
+            <span class="set-hint">Сколько разделов исправляется одновременно в параллельных потоках. Выше — быстрее аудит, но зависит от лимитов API (для Kimi Tier 1 оптимально 6).</span>
+          </div>
+          <div class="set-field">
+            <label class="pii-chk" style="font-weight:600">
+              <input type="checkbox" id="set-gherkin-in-fixed" class="admin-ctrl">
+              Включать сценарии Gherkin (Given / When / Then) в итоговый файл <span class="info-ico" title="Определяет, попадают ли BDD-сценарии в скачиваемый исправленный документ">i</span>
+            </label>
+            <span class="set-hint">Если выключено (по умолчанию) — в скачиваемый <code>fixed.pdf / .docx / .md</code> попадает только чистый текст ТЗ, а Gherkin остаётся под стрелкой разбора. Если включено — Gherkin добавляется прямо в текст разделов и в итоговый файл.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="set-sec">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
+          <div>
+            <h3>2. База знаний и референсы банка (RAG · Qdrant)</h3>
+            <p class="set-sub" style="margin-bottom:0">Стандарты, регламенты и шаблоны банка, по которым агенты проверяют ТЗ.</p>
+          </div>
+          <div>
+            <input type="file" id="kb-file" accept=".md,.txt,.pdf,.docx" style="display:none">
+            <button type="button" class="btn accent admin-ctrl" id="kb-add-btn">+ Добавить документ банка</button>
+          </div>
+        </div>
+        <div class="kb-list" id="kb-list"><span class="empty">Загрузка базы знаний…</span></div>
+      </div>
+
+      <div class="set-sec">
+        <h3>3. Маскирование персональных данных (PII)</h3>
+        <p class="set-sub">Детерминированное маскирование до отправки текста в LLM (обратная демаскировка при экспорте).</p>
+        <label class="pii-chk" style="font-weight:600">
+          <input type="checkbox" id="set-pii-enabled" checked class="admin-ctrl">
+          Включить автоматическое маскирование PII
+        </label>
+        <div class="pii-grid" id="set-pii-kinds"></div>
+      </div>
+
+      <div class="set-sec">
+        <h3>4. Модель LLM и глубина рассуждений</h3>
+        <p class="set-sub" id="set-llm-info">Провайдер: OpenAiCompatible</p>
+        <div class="set-grid">
+          <div class="set-field">
+            <label for="set-model">Модель по умолчанию <span class="info-ico" title="Основная языковая модель для всех агентов">i</span></label>
+            <select id="set-model" class="admin-ctrl">
+              <option value="kimi-k3">kimi-k3 (быстрая, по умолчанию)</option>
+              <option value="kimi-k3.1-pro">kimi-k3.1-pro (максимальное качество)</option>
+            </select>
+            <span class="set-hint">Базовая LLM для агентов-критиков, арбитра и автоисправления. <code>kimi-k3</code> быстрее и дешевле, <code>kimi-k3.1-pro</code> — глубже для сложных архитектурных ТЗ.</span>
+          </div>
+          <div class="set-field">
+            <label for="set-effort">Reasoning Effort <span class="info-ico" title="Сколько шагов рассуждения делает модель перед ответом">i</span></label>
+            <select id="set-effort" class="admin-ctrl">
+              <option value="low">low (по умолчанию)</option>
+              <option value="high">high</option>
+              <option value="max">max</option>
+            </select>
+            <span class="set-hint">Глубина внутреннего рассуждения модели: <code>low</code> даёт быстрый ответ за 15–30 сек, <code>high</code>/<code>max</code> — дольше, но тщательнее на запутанных спецификациях.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <span id="settings-status" style="font-size:12px;color:var(--mute)">Применяется ко всем новым проверкам ТЗ</span>
+      <div style="display:flex;gap:8px">
+        <button type="button" class="btn" id="settings-cancel">Закрыть</button>
+        <button type="button" class="btn primary admin-ctrl" id="settings-save">Сохранить настройки</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script>
 const $ = s => document.querySelector(s);
+const $$ = s => document.querySelectorAll(s);
 const esc = s => (s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let session = null, doc = null, selectedFile = null;
 
-// Drag & Drop + File Picker
-const dropzone = $('#dropzone');
-const fileInput = $('#file');
+// Tab model: { id, title, kind: 'session'|'new', sessionId, doc, report, reportMd, trace: [], file, previewMd, running, rightFile: 'fixed'|'report'|'log' }
+let tabs = [];
+let activeTabId = null;
+let tabCounter = 0;
+let recentSessions = [];
+let expandedSessions = new Set();
+let includeGherkinInFixed = false;
 
-$('#pick').onclick = e => { e.stopPropagation(); fileInput.click(); };
-dropzone.onclick = e => { if (!e.target.closest('button')) fileInput.click(); };
-
-function setFile(f) {
-  if (!f) return;
-  selectedFile = f;
-  $('#file-name').textContent = `📎 ${f.name} (${(f.size / 1024).toFixed(1)} КБ)`;
-  $('#go').disabled = false;
+function activeTab() { return tabs.find(t => t.id === activeTabId) || null; }
+function docExt(t) {
+  const name = (t?.doc?.sourceFileName || t?.title || '').toLowerCase();
+  if (name.endsWith('.pdf')) return '.pdf';
+  if (name.endsWith('.docx')) return '.docx';
+  return '.md';
 }
-fileInput.onchange = () => setFile(fileInput.files[0]);
 
-['dragenter', 'dragover'].forEach(ev => dropzone.addEventListener(ev, e => {
-  e.preventDefault(); e.stopPropagation(); dropzone.classList.add('dragover');
-}));
-['dragleave', 'drop'].forEach(ev => dropzone.addEventListener(ev, e => {
-  e.preventDefault(); e.stopPropagation(); dropzone.classList.remove('dragover');
-}));
-dropzone.addEventListener('drop', e => {
-  const f = e.dataTransfer?.files?.[0];
-  if (f) { setFile(f); startAudit(); }
+$$('#left-view-switch button').forEach(btn => btn.onclick = () => {
+  const t = activeTab(); if (!t) return;
+  t.leftMode = btn.dataset.lmode;
+  renderLeftPane(t);
+});
+$$('#right-view-switch button').forEach(btn => btn.onclick = () => {
+  const t = activeTab(); if (!t) return;
+  t.rightMode = btn.dataset.rmode;
+  renderRightPane();
 });
 
-$('#go').onclick = e => { e.stopPropagation(); startAudit(); };
+// Resizable split divider
+const resizer = $('#resizer'), leftPane = $('#pane-left');
+resizer.addEventListener('mousedown', e => {
+  e.preventDefault(); resizer.classList.add('dragging');
+  const move = ev => { leftPane.style.width = Math.min(75, Math.max(25, (ev.clientX / window.innerWidth) * 100)) + '%'; };
+  const up = () => { resizer.classList.remove('dragging'); window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+  window.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', up);
+});
 
-async function startAudit() {
-  if (!selectedFile) return;
-  $('#trace').innerHTML = '';
-  $('#cards').innerHTML = '<div class="card sg sg-lagoon"><b>Агенты работают…</b><div class="card-meta">Supervisor → Критики + Checklist → Meta-Critic → Patch Loop</div></div>';
-  $('#score').style.display = 'none';
-  $('#exports').classList.remove('visible');
-  $('#go').disabled = true;
-  $('#status').textContent = `Загрузка ${selectedFile.name}…`;
+// Sidebar toggle
+function toggleSidebar(force) {
+  const sb = $('#history-sidebar'), btn = $('#brand-toggle');
+  const open = typeof force === 'boolean' ? force : !sb.classList.contains('open');
+  sb.classList.toggle('open', open);
+  btn.classList.toggle('open', open);
+}
+$('#brand-toggle').onclick = () => toggleSidebar();
+$('#sidebar-close').onclick = () => toggleSidebar(false);
 
-  const body = new FormData();
-  body.append('file', selectedFile);
-  const r = await fetch('/api/audits', { method: 'POST', body });
-  const j = await r.json();
-  if (!r.ok) {
-    $('#status').textContent = j.error || 'Ошибка загрузки';
-    $('#go').disabled = false;
+// Tab management
+function createNewTab() {
+  const t = { id: 'tab-' + (++tabCounter), title: 'Новое ТЗ', kind: 'new', sessionId: null, doc: null, report: null, reportMd: '', trace: [], file: null, previewMd: '', running: false, rightFile: 'fixed' };
+  tabs.push(t);
+  activateTab(t.id);
+}
+function closeTab(id) {
+  const idx = tabs.findIndex(t => t.id === id);
+  if (idx === -1) return;
+  tabs.splice(idx, 1);
+  if (!tabs.length) { createNewTab(); return; }
+  if (activeTabId === id) activateTab(tabs[Math.max(0, idx - 1)].id);
+  else renderLeftTabBar();
+}
+function activateTab(id) {
+  activeTabId = id;
+  const sid = activeTab()?.sessionId;
+  if (sid) expandedSessions.add(sid);
+  renderLeftTabBar();
+  renderActiveTab();
+  renderHistorySidebar();
+}
+function renderLeftTabBar() {
+  const bar = $('#left-tabbar');
+  bar.innerHTML = tabs.map(t => `
+    <div class="tab ${t.id === activeTabId ? 'active' : ''}" data-tid="${t.id}">
+      <span>${esc(t.title)}</span>
+      <button type="button" class="tab-close" data-close="${t.id}" title="Закрыть">×</button>
+    </div>
+  `).join('') + `<button type="button" class="tab-add" id="tab-add-btn" title="Новая вкладка для ТЗ">+</button>`;
+
+  bar.querySelectorAll('.tab[data-tid]').forEach(el => el.onclick = e => {
+    if (e.target.dataset.close) { closeTab(e.target.dataset.close); return; }
+    activateTab(el.dataset.tid);
+  });
+  $('#tab-add-btn').onclick = createNewTab;
+}
+$('#btn-new-tab').onclick = createNewTab;
+
+function renderActiveTab() {
+  const t = activeTab();
+  if (!t) return;
+  renderLeftPane(t);
+  renderRightPane();
+  updateTopAndStatus(t);
+}
+
+function renderLeftPane(t) {
+  const container = $('#left-scroll');
+  const lsw = $('#left-view-switch');
+  container.classList.remove('flush');
+  lsw.style.display = 'none';
+  if (t.kind === 'new' && !t.doc) {
+    $('#left-crumb').textContent = t.file ? `Новое ТЗ › ${t.file.name}` : 'Новая вкладка › перетащите ТЗ';
+    $('#left-meta').textContent = t.file ? `${(t.file.size / 1024).toFixed(1)} КБ` : '';
+    if (t.previewMd) {
+      container.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;margin-bottom:14px;border-radius:6px;background:var(--accent-bg);border:1px solid #b6e3ff">
+          <span style="font-size:12.5px"><b>${esc(t.file.name)}</b> готов к проверке (0 токенов)</span>
+          <div style="display:flex;gap:6px">
+            <button type="button" class="btn" id="inline-pick">Другой файл</button>
+            <button type="button" class="btn primary" id="inline-go">▶ Проверить ТЗ</button>
+          </div>
+        </div>
+        <div class="md">${renderMarkdown(t.previewMd, [])}</div>`;
+    } else {
+      container.innerHTML = `
+        <div class="drop-wrap">
+          <img src="/mascot-drop.png?v=2" class="drop-mascot" alt="Кидай сюда файл!">
+          <div class="new-tab-drop" id="dropzone">
+            <h2>Перетащите файл ТЗ сюда (Drag &amp; Drop)</h2>
+            <p>Поддерживаются <b>.md</b>, <b>.pdf</b>, <b>.docx</b> · PII маскируется автоматически</p>
+            <div style="display:flex;justify-content:center;gap:8px">
+              <button type="button" class="btn" id="inline-pick">Выбрать файл</button>
+              ${t.file ? `<button type="button" class="btn primary" id="inline-go">▶ Проверить ${esc(t.file.name)}</button>` : ''}
+            </div>
+          </div>
+        </div>`;
+      const dz = $('#dropzone');
+      ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('dragover'); }));
+      ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('dragover'); }));
+      dz.addEventListener('drop', e => { const f = e.dataTransfer?.files?.[0]; if (f) attachFileToTab(t, f); });
+      dz.onclick = e => { if (!e.target.closest('button')) $('#file').click(); };
+    }
+    $('#inline-pick')?.addEventListener('click', () => $('#file').click());
+    $('#inline-go')?.addEventListener('click', () => startAuditOnTab(t));
     return;
   }
 
-  session = j.sessionId;
-  $('#status').textContent = `Сессия: ${session}`;
-  doc = await (await fetch(`/api/audits/${session}/document`)).json();
-  renderDoc([]);
+  if (!t.doc) {
+    $('#left-crumb').textContent = `Загрузка ${t.title}…`;
+    container.innerHTML = '<p class="empty">Загрузка документа из PostgreSQL…</p>';
+    return;
+  }
 
-  const es = new EventSource(`/api/audits/${session}/events`);
+  const ext = docExt(t);
+  const lMode = t.leftMode || 'audit';
+  lsw.style.display = 'inline-flex';
+  $('#left-clean-btn').textContent = ext === '.pdf' ? 'Оригинал PDF' : ext === '.docx' ? 'Оригинал DOCX' : 'Чистый текст';
+  lsw.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.lmode === lMode));
+
+  const findings = t.report?.findings || [];
+  $('#left-crumb').textContent = `Исходное ТЗ › ${t.doc.sourceFileName || t.title}`;
+  $('#left-meta').textContent = `${t.doc.sections.length} секций`;
+
+  if (lMode === 'clean') {
+    if (ext === '.pdf' && t.sessionId) {
+      container.classList.add('flush');
+      container.innerHTML = `<iframe class="pdf-frame" src="/api/audits/${t.sessionId}/original.pdf"></iframe>`;
+      return;
+    }
+    container.innerHTML = `<div class="clean-paper md"><h1>${esc(t.doc.title)}</h1>` +
+      t.doc.sections.map(s => `${s.title ? `<h2>${esc(s.id.startsWith('s-') ? s.title : s.id + ' ' + s.title)}</h2>` : ''}${renderMarkdown(s.text, [])}`).join('') +
+      `</div>`;
+    return;
+  }
+
+  let leftScoreCard = '';
+  if (t.report) {
+    const rep = t.report;
+    const b = rep.findings.filter(f => f.severity === 'Blocker').length;
+    const c = rep.findings.filter(f => f.severity === 'Critical').length;
+    const m = rep.findings.filter(f => f.severity === 'Major').length;
+    const mi = rep.findings.filter(f => f.severity === 'Minor').length;
+    const rawScore = 100 - 15 * b - 8 * c - 4 * m - 1 * mi;
+    const verdict = b > 0 || c >= 2 ? 'NO-GO' : c === 1 ? 'УСЛОВНЫЙ GO' : 'GO';
+    const affectedCount = new Set(rep.findings.map(f => f.sectionId)).size;
+    const verifiedPatches = rep.patches.filter(p => p.verified).length;
+    const verdictDesc = b > 0 || c >= 2
+      ? `Документ не готов к передаче в разработку: обнаружены критические дефекты (${b} Blocker, ${c} Critical), несущие риски финансовых потерь, сбоев интеграций или нарушения безопасности.`
+      : c === 1
+        ? `Документ может быть передан в разработку условно — после устранения критического замечания и проверки граничных сценариев.`
+        : `Документ соответствует базовым критериям ISO/IEC/IEEE 29148 и готов к передаче в разработку.`;
+    const topRisks = rep.findings.filter(f => f.severity === 'Blocker' || f.severity === 'Critical').slice(0, 3);
+    leftScoreCard = `
+      <div class="score-strip">
+        <div class="score-strip-head">
+          <div>
+            <b>Quality Score: ${rep.qualityScore} / 100</b>
+            <span class="sev ${b > 0 || c >= 2 ? 'Blocker' : c === 1 ? 'Critical' : 'Ok'}" style="margin-left:6px">${verdict}</span>
+          </div>
+          <span class="score-strip-meta" style="margin-top:0">Домен: ${esc(rep.domain || 'FinTech')} · Затронуто: ${affectedCount}/${t.doc.sections.length} · Правок: ${verifiedPatches}</span>
+        </div>
+        <div class="score-strip-meta">100 − 15×${b} Blocker − 8×${c} Critical − 4×${m} Major − 1×${mi} Minor = max(0, ${rawScore}) → ${rep.qualityScore}</div>
+        <p class="score-strip-desc">${verdictDesc} Всего зафиксировано ${rep.findings.length} подтверждённых замечаний${rep.patches.length ? `, исправления подготовлены в правой панели` : ''}.</p>
+        ${topRisks.length ? `<ul class="score-strip-risks">${topRisks.map(r => `<li><b>${esc(r.sectionId)}</b> — ${esc(r.title)}</li>`).join('')}</ul>` : ''}
+      </div>`;
+  }
+
+  container.innerHTML = leftScoreCard + t.doc.sections.map(s => {
+    const secFindings = findings.filter(f => f.sectionId === s.id);
+    const hasIssue = secFindings.length > 0;
+    const errHeads = secFindings.map(f =>
+      `<div class="left-err-head"><span class="sev ${esc(f.severity)}">${esc(f.severity)} · ${esc(f.id)}</span><span>${esc(f.title)}</span></div>`
+    ).join('');
+    return `<div class="sec ${hasIssue ? 'has-issue' : ''}" id="sec-${esc(s.id)}" data-sec="${esc(s.id)}" ${hasIssue ? `data-jump="${esc(secFindings[0].id)}"` : ''}>
+      <div class="gutter">${esc(s.id)}</div>
+      <div>
+        ${errHeads}
+        ${s.title ? `<div class="sec-title">${esc(s.title)}</div>` : ''}
+        <div class="md">${renderMarkdown(s.text, secFindings)}</div>
+      </div>
+    </div>`;
+  }).join('');
+  container.querySelectorAll('.sec[data-sec]').forEach(el => el.onclick = e => {
+    if (window.getSelection()?.toString()) return;
+    const m = e.target.closest('mark');
+    focusSectionOnRight(el.dataset.sec, m ? m.dataset.f : el.dataset.jump);
+  });
+}
+
+function renderStagesView(t, traceHtml) {
+  const evs = t.trace || [];
+  const has = type => evs.some(e => e.type === type);
+  const lastOf = type => [...evs].reverse().find(e => e.type === type);
+
+  const ingested = lastOf('TZ_INGESTED');
+  const routed = lastOf('ROUTED');
+  const grounded = lastOf('GROUNDED');
+  const judged = lastOf('JUDGED');
+  const patchesEv = lastOf('PATCHES');
+  const ready = has('REPORT_READY');
+
+  // Track individual critics
+  const startedCritics = new Set(evs.filter(e => e.type === 'CRITIC_STARTED').map(e => e.agent));
+  const doneCritics = new Map();
+  for (const e of evs) {
+    if (e.type === 'FINDINGS') doneCritics.set(e.agent, e.message);
+  }
+  const allCritics = [...new Set([...doneCritics.keys(), ...startedCritics])];
+  const draftCount = evs.filter(e => e.type === 'PATCH_DRAFTED').length;
+  const verOkCount = evs.filter(e => e.type === 'PATCH_VERIFIED' && e.message.includes(': ok')).length;
+
+  const s1Done = !!ingested;
+  const s2Done = !!routed;
+  const s3Done = !!grounded || !!judged || (allCritics.length > 0 && allCritics.every(c => doneCritics.has(c)) && s2Done);
+  const s4Done = !!judged;
+  const s5Done = !!patchesEv || ready;
+
+  const stages = [
+    {
+      name: '1. Парсинг документа и PII-маскирование',
+      state: s1Done ? 'done' : 'active',
+      desc: ingested ? ingested.message : 'Разбор структуры документа, таблиц и маскирование персональных данных…',
+    },
+    {
+      name: '2. Маршрутизация (Supervisor)',
+      state: s2Done ? 'done' : s1Done ? 'active' : 'pending',
+      desc: routed ? routed.message : 'Определение домена ТЗ и назначение профильных агентов-критиков…',
+    },
+    {
+      name: '3. Параллельный аудит агентов-критиков',
+      state: s3Done ? 'done' : s2Done ? 'active' : 'pending',
+      desc: allCritics.length ? `Завершено агентов: ${doneCritics.size} из ${allCritics.length}` : 'Проверка логики, QA, безопасности, распределённых систем и чек-листа ISO 29148…',
+      pills: allCritics.map(c => {
+        const done = doneCritics.has(c);
+        return `<span class="agent-pill ${done ? 'ok' : 'run'}">${done ? '✓' : '●'} ${esc(c)}${done ? ' · ' + esc(doneCritics.get(c)) : ''}</span>`;
+      }).join(''),
+    },
+    {
+      name: '4. Верификация цитат и Арбитр (Meta-Critic)',
+      state: s4Done ? 'done' : s3Done ? 'active' : 'pending',
+      desc: judged ? judged.message : grounded ? `${grounded.message} · арбитр объединяет и оценивает дефекты…` : 'Проверка цитат по тексту, дедупликация и расчёт Quality Score…',
+    },
+    {
+      name: '5. Автоисправление разделов и верификация патчей',
+      state: s5Done ? 'done' : s4Done ? 'active' : 'pending',
+      desc: patchesEv ? patchesEv.message : draftCount ? `Черновиков: ${draftCount}, проверено верификатором: ${verOkCount}…` : 'Переписывание проблемных разделов до готового вида…',
+    },
+  ];
+
+  const doneCount = stages.filter(s => s.state === 'done').length;
+  const pct = ready ? 100 : Math.min(95, Math.round((doneCount / stages.length) * 100) + (doneCount < 5 ? 8 : 0));
+
+  return `
+    <div class="stages-card">
+      <div class="stages-head">
+        <span class="stages-title">${ready ? 'Аудит завершён' : 'Этапы работы агентов'}</span>
+        <span class="stages-pct">${pct}%</span>
+      </div>
+      <div class="stages-bar"><div class="stages-bar-fill" style="width:${pct}%"></div></div>
+      <div class="stage-list">
+        ${stages.map(s => `
+          <div class="stage-row ${s.state}">
+            <div class="stage-ico">${s.state === 'done' ? '✓' : s.state === 'active' ? '●' : '○'}</div>
+            <div>
+              <div class="stage-name">${s.name}</div>
+              <div class="stage-desc">${esc(s.desc)}</div>
+              ${s.pills ? `<div class="stage-pills">${s.pills}</div>` : ''}
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>
+    <details class="inline-details" ${t.rightFile === 'log' ? 'open' : ''}>
+      <summary>Подробный технический журнал событий (${evs.length})</summary>
+      <ol class="trace-list" style="margin-top:8px">${traceHtml}</ol>
+    </details>`;
+}
+
+function renderRightPane() {
+  const t = activeTab();
+  const out = $('#right-scroll');
+  if (!t) return;
+
+  const baseName = (t.doc?.sourceFileName || t.title || 'spec').replace(/\.[^.]+$/, '');
+  const traceHtml = t.trace.length ? t.trace.map(row => {
+    const cls = row.type.includes('FAIL') ? 'err' : (row.type === 'REPORT_READY' || row.type === 'PATCH_VERIFIED' || row.type === 'JUDGED') ? 'ok' : '';
+    return `<li><span class="trace-tm">+${row.dt}s</span><span class="trace-ev ${cls}">${esc(row.agent)}·${esc(row.type)}</span><span class="trace-msg">${esc(row.message)}</span></li>`;
+  }).join('') : '<li class="empty" style="display:block">Ожидание запуска аудита…</li>';
+
+  const dl = $('#right-dl');
+  const rsw = $('#right-view-switch');
+  out.classList.remove('flush');
+  dl.style.display = 'none';
+  rsw.style.display = 'none';
+
+  // While running → show clear 5-stage visual pipeline + collapsible raw log!
+  if (t.running && !t.report) {
+    $('#right-filename').textContent = `${baseName} — аудит выполняется…`;
+    $('#right-crumb').textContent = `Агенты работают в реальном времени (${t.trace.length} событий)`;
+    $('#right-meta').textContent = '';
+    out.innerHTML = renderStagesView(t, traceHtml);
+    return;
+  }
+
+  if (!t.report) {
+    $('#right-filename').textContent = 'Предпросмотр';
+    $('#right-crumb').textContent = 'Нажмите «▶ Проверить ТЗ» слева или выберите проект в панели SpecAgent ☰';
+    $('#right-meta').textContent = '';
+    out.innerHTML = '<p class="empty">После проверки здесь появится исправленное ТЗ со всеми замечаниями, а в левой панели <b>SpecAgent ☰</b> — все сгенерированные файлы (<code>fixed.md</code>, <code>report.md</code>, <code>audit.log</code>).</p>';
+    return;
+  }
+
+  const rep = t.report;
+
+  // Mode A: audit.log selected from Xcode sidebar
+  if (t.rightFile === 'log') {
+    $('#right-filename').textContent = `${baseName}-audit.log`;
+    $('#right-crumb').textContent = `Этапы и журнал работы агентов (${t.trace.length} событий · PostgreSQL Event Log)`;
+    $('#right-meta').textContent = '';
+    out.innerHTML = renderStagesView(t, traceHtml);
+    return;
+  }
+
+  // Mode B: report.md selected from Xcode sidebar
+  if (t.rightFile === 'report') {
+    const reportFile = `${baseName}-report.md`;
+    $('#right-filename').textContent = reportFile;
+    $('#right-crumb').textContent = 'Официальный отчёт аудита для сдачи (ISO/IEC/IEEE 29148)';
+    $('#right-meta').textContent = '';
+    dl.href = `/api/audits/${t.sessionId}/export/report.md`;
+    dl.setAttribute('download', reportFile);
+    dl.textContent = `↓ ${reportFile}`;
+    dl.className = 'btn accent';
+    dl.style.display = 'inline-flex';
+    out.innerHTML = `<div class="md">${t.reportMd ? renderMarkdown(t.reportMd, []) : '<p class="empty">Загрузка…</p>'}</div>`;
+    return;
+  }
+
+  // Mode C (DEFAULT): Fixed document in original format (.pdf / .docx / .md) + 2 tabs: Разбор правок | Чистый файл
+  const ext = docExt(t);
+  const rMode = t.rightMode || 'audit';
+  const fixedFile = `${baseName}-fixed${ext}`;
+  $('#right-filename').textContent = fixedFile;
+  $('#right-crumb').textContent = rMode === 'clean'
+    ? `Чистый готовый документ (${fixedFile}) без пометок аудита`
+    : `Исправленная версия + все замечания (${rep.findings.length} замечаний, ${rep.patches.length} автоисправлений)`;
+  $('#right-meta').textContent = '';
+
+  rsw.style.display = 'inline-flex';
+  $('#right-clean-btn').textContent = ext === '.pdf' ? 'Чистый PDF' : ext === '.docx' ? 'Чистый DOCX' : 'Чистый документ';
+  rsw.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.rmode === rMode));
+
+  const dlUrl = ext === '.pdf'
+    ? `/api/audits/${t.sessionId}/export/fixed.pdf?download=1`
+    : ext === '.docx'
+      ? `/api/audits/${t.sessionId}/export/fixed.docx`
+      : `/api/audits/${t.sessionId}/export/fixed.md`;
+  dl.href = dlUrl;
+  dl.setAttribute('download', fixedFile);
+  dl.textContent = `↓ ${fixedFile}`;
+  dl.className = 'btn ok';
+  dl.style.display = 'inline-flex';
+
+  const patchesBySection = Object.fromEntries(rep.patches.map(p => [p.sectionId, p]));
+
+  if (rMode === 'clean') {
+    if (ext === '.pdf') {
+      out.classList.add('flush');
+      out.innerHTML = `<iframe class="pdf-frame" src="/api/audits/${t.sessionId}/export/fixed.pdf"></iframe>`;
+      return;
+    }
+    out.innerHTML = `<div class="clean-paper md"><h1>${esc(t.doc.title)}</h1>` +
+      t.doc.sections.map(s => {
+        const p = patchesBySection[s.id];
+        const body = p && p.after ? p.after : s.text;
+        const heading = s.title ? `<h2>${esc(s.id.startsWith('s-') ? s.title : s.id + ' ' + s.title)}</h2>` : '';
+        return heading + renderMarkdown(body, []);
+      }).join('') + `</div>`;
+    return;
+  }
+
+  const findingsBySection = {};
+  for (const f of rep.findings) (findingsBySection[f.sectionId] ??= []).push(f);
+
+  const sections = t.doc.sections;
+
+  out.innerHTML = sections.map(s => {
+    const p = patchesBySection[s.id];
+    const secFindings = findingsBySection[s.id] || [];
+
+    if (!p && secFindings.length === 0) {
+      return `<div class="sec unchanged" id="fix-${esc(s.id)}">
+        <div class="gutter">${esc(s.id)}</div>
+        <div><div class="sec-title" style="color:var(--ink)">${esc(s.title)}</div><div class="md">${renderMarkdown(s.text, [])}</div></div>
+      </div>`;
+    }
+
+    const calloutsHtml = secFindings.map(f => {
+      const isPatched = p && p.findingId === f.id;
+      return `<div class="finding-callout">
+        <div class="callout-top">
+          <div>
+            <span class="sev ${esc(f.severity)}">${esc(f.severity)} · ${esc(f.id)}</span>
+            <span class="callout-heading" style="margin-left:8px">${esc(f.title)}</span>
+          </div>
+          ${isPatched ? `<span class="sev Ok">${p.verified ? '✓ Проверено' : 'Автопатч'}</span>` : ''}
+        </div>
+        <div class="explain-body">
+          <p><b>Почему это проблема:</b> ${esc(f.description)}</p>
+          ${f.recommendation ? `<p><b>Как нужно:</b> ${esc(f.recommendation)}</p>` : ''}
+          ${f.rationale ? `<p><b>Обоснование арбитра:</b> ${esc(f.rationale)}</p>` : ''}
+          <div class="explain-meta">✓ Цитата подтверждена в ${esc(f.sectionId)}${f.standardRef ? ' · ' + esc(f.standardRef) : ''} · агенты: ${f.agents.map(esc).join(', ')}</div>
+          <div class="ask"><input placeholder="@compliance спросить по разделу ${esc(s.id)}…" data-s="${esc(s.id)}"><button class="btn">Спросить</button></div>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Clean finished text shown directly in the document
+    let cleanText = p ? p.after : (secFindings[0]?.recommendation ? `${s.text}\n\n> **Рекомендация SpecAgent:** ${secFindings[0].recommendation}` : s.text);
+    if (includeGherkinInFixed && p?.gherkin) {
+      cleanText += `\n\n### Критерии приёмки (Gherkin)\n\`\`\`gherkin\n${p.gherkin}\n\`\`\``;
+    }
+    const summaryLabel = secFindings.map(f => `${f.id} · ${f.severity}`).join(', ');
+
+    return `<div class="sec ${p ? 'has-fix' : 'has-note'}" id="fix-${esc(s.id)}">
+      <div class="gutter" style="color:#246b3b;font-weight:700">${esc(s.id)}</div>
+      <div>
+        <div class="sec-title" style="color:var(--ink)">${esc(s.title)}</div>
+        <div class="clean-fixed-body md">${renderMarkdown(cleanText, [])}</div>
+        <details class="clean-expand" id="exp-${esc(s.id)}">
+          <summary>Почему это проблема и доказательство (${esc(summaryLabel)})</summary>
+          <div class="clean-expand-inner">
+            ${calloutsHtml}
+            ${(!includeGherkinInFixed && p?.gherkin) ? `<details class="inline-details"><summary>Критерии приёмки (Gherkin)</summary><pre>${esc(p.gherkin)}</pre></details>` : ''}
+          </div>
+        </details>
+      </div>
+    </div>`;
+  }).join('');
+
+  out.querySelectorAll('.ask button').forEach(btn => btn.onclick = async () => {
+    const input = btn.previousElementSibling, m = input.value.match(/^@(\w+)\s+(.*)$/);
+    if (!m) { input.value = '@compliance ' + input.value; return; }
+    btn.disabled = true;
+    const r = await fetch(`/api/audits/${t.sessionId}/ask`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent: m[1], sectionId: input.dataset.s, question: m[2] })
+    });
+    const a = await r.json(); btn.disabled = false;
+    btn.parentElement.insertAdjacentHTML('afterend', `<div class="ask-reply"><b>@${esc(m[1])}:</b> ${esc(a.answer || a.error)}</div>`);
+  });
+}
+
+function updateTopAndStatus(t) {
+  if (t.report) {
+    $('#sb-dot').className = 'dot';
+    $('#sb-status').textContent = `${t.title} · Score ${t.report.qualityScore}/100 · ${t.report.findings.length} замечаний, ${t.report.patches.length} исправлений`;
+  } else {
+    $('#sb-dot').className = t.running ? 'dot run' : 'dot';
+    $('#sb-status').textContent = t.running ? `Аудит ${t.title} выполняется…` : 'Новая вкладка';
+  }
+}
+
+// Xcode Project Navigator Tree in Left Sidebar
+async function refreshSessionDropdown() {
+  try {
+    recentSessions = await (await fetch('/api/audits/recent')).json();
+    renderHistorySidebar();
+  } catch { /* ignore */ }
+}
+
+function renderHistorySidebar() {
+  const list = $('#history-list');
+  const curTab = activeTab();
+  if (!recentSessions.length) {
+    list.innerHTML = '<p class="empty" style="padding:8px">История пуста.</p>';
+    return;
+  }
+  list.innerHTML = recentSessions.map(s => {
+    const isActive = curTab?.sessionId === s.sessionId;
+    const isExpanded = expandedSessions.has(s.sessionId) || isActive;
+    const base = (s.fileName || s.sessionId).replace(/\.[^.]+$/, '');
+    const scoreBadge = s.score !== null && s.score !== undefined
+      ? `<span class="sev ${s.score >= 80 ? 'Ok' : s.score >= 50 ? 'Critical' : 'Blocker'}">${s.score}/100</span>`
+      : `<span class="sev Minor">${esc(s.status)}</span>`;
+    return `
+      <div class="proj-group ${isExpanded ? 'expanded' : ''}" data-sid="${esc(s.sessionId)}">
+        <button type="button" class="proj-folder ${isActive ? 'active' : ''}" data-folder="${esc(s.sessionId)}">
+          <div style="min-width:0;flex:1">
+            <div class="proj-left">
+              <span class="proj-chev">${isExpanded ? '▾' : '▸'}</span>
+              <span class="proj-name">${esc(s.fileName || s.sessionId)}</span>
+            </div>
+            ${s.title ? `<div class="proj-sub">${esc(s.title)}</div>` : ''}
+          </div>
+          ${scoreBadge}
+        </button>
+        <div class="proj-files">
+          <button type="button" class="proj-file ${isActive && curTab.rightFile === 'fixed' ? 'active' : ''}" data-open-sid="${esc(s.sessionId)}" data-rfile="fixed">
+            <span>${esc(base)}-fixed.md</span><span class="fdesc">правки</span>
+          </button>
+          <button type="button" class="proj-file ${isActive && curTab.rightFile === 'report' ? 'active' : ''}" data-open-sid="${esc(s.sessionId)}" data-rfile="report">
+            <span>report.md</span><span class="fdesc">отчёт</span>
+          </button>
+          <button type="button" class="proj-file ${isActive && curTab.rightFile === 'log' ? 'active' : ''}" data-open-sid="${esc(s.sessionId)}" data-rfile="log">
+            <span>audit.log</span><span class="fdesc">логи</span>
+          </button>
+        </div>
+      </div>`;
+  }).join('');
+
+  list.querySelectorAll('[data-folder]').forEach(btn => btn.onclick = () => {
+    const sid = btn.dataset.folder;
+    if (expandedSessions.has(sid) && activeTab()?.sessionId === sid) expandedSessions.delete(sid);
+    else { expandedSessions.add(sid); openSessionInTab(sid, 'fixed'); }
+    renderHistorySidebar();
+  });
+  list.querySelectorAll('[data-open-sid]').forEach(btn => btn.onclick = () => {
+    openSessionInTab(btn.dataset.openSid, btn.dataset.rfile);
+  });
+}
+
+// File attach & audit start
+function attachFileToTab(t, f) {
+  t.file = f; t.title = f.name; t.previewMd = '';
+  renderLeftTabBar();
+  if (/\.(md|txt)$/i.test(f.name)) {
+    const reader = new FileReader();
+    reader.onload = () => { t.previewMd = String(reader.result || ''); if (activeTabId === t.id) renderActiveTab(); };
+    reader.readAsText(f, 'utf-8');
+  } else renderActiveTab();
+}
+$('#file').onchange = () => {
+  const f = $('#file').files[0]; if (!f) return;
+  let t = activeTab();
+  if (!t || t.kind !== 'new' || t.doc) { createNewTab(); t = activeTab(); }
+  attachFileToTab(t, f);
+  $('#file').value = '';
+};
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => {
+  e.preventDefault();
+  const f = e.dataTransfer?.files?.[0]; if (!f) return;
+  let t = activeTab();
+  if (!t || t.kind !== 'new' || t.doc) { createNewTab(); t = activeTab(); }
+  attachFileToTab(t, f);
+});
+
+async function startAuditOnTab(t) {
+  if (!t.file || t.running) return;
+  t.running = true; t.trace = []; t.report = null; t.reportMd = ''; t.rightFile = 'fixed';
+  const started = Date.now();
+  $('#sb-mode').textContent = 'Live LLM (Kimi K3)';
+  renderActiveTab();
+
+  const body = new FormData(); body.append('file', t.file);
+  const r = await fetch('/api/audits', { method: 'POST', body });
+  const j = await r.json();
+  if (!r.ok) { t.running = false; $('#sb-status').textContent = j.error || 'Ошибка'; renderActiveTab(); return; }
+
+  t.sessionId = j.sessionId; t.kind = 'session';
+  expandedSessions.add(t.sessionId);
+  t.doc = await (await fetch(`/api/audits/${t.sessionId}/document`)).json();
+  t.title = t.doc.sourceFileName || t.file.name;
+  renderLeftTabBar();
+  if (activeTabId === t.id) renderActiveTab();
+
+  const es = new EventSource(`/api/audits/${t.sessionId}/events`);
   es.addEventListener('audit', ev => {
     const e = JSON.parse(ev.data);
-    const li = document.createElement('li');
-    li.innerHTML = `<span class="ag">${esc(e.agent)}</span><span class="tp">${esc(e.type)}</span><span>${esc(e.message)}</span>`;
-    $('#trace').append(li);
-    li.scrollIntoView({ block: 'nearest' });
+    const dt = ((Date.now() - started) / 1000).toFixed(1);
+    t.trace.push({ dt, agent: e.agent, type: e.type, message: e.message });
+    if (activeTabId === t.id) { $('#sb-stage').textContent = `${e.agent} · ${e.type} (+${dt}s)`; renderRightPane(); }
     if (e.type === 'REPORT_READY' || e.type === 'RUN_FAILED') {
-      es.close();
-      $('#go').disabled = false;
-      loadReport();
+      es.close(); t.running = false;
+      fetchTabReport(t).then(() => { if (activeTabId === t.id) renderActiveTab(); refreshSessionDropdown(); });
     }
   });
 }
 
-// Lightweight Markdown -> HTML Renderer (tables, code blocks, lists, bold, inline code)
+async function fetchTabReport(t) {
+  const j = await (await fetch(`/api/audits/${t.sessionId}`)).json();
+  if (j.status !== 'done') { t.running = j.status === 'running'; return false; }
+  t.running = false; t.report = j.report;
+  t.reportMd = await (await fetch(`/api/audits/${t.sessionId}/export/report.md`)).text();
+  return true;
+}
+
+async function openSessionInTab(sessionId, rightFile = 'fixed') {
+  expandedSessions.add(sessionId);
+  const existing = tabs.find(t => t.sessionId === sessionId);
+  if (existing) {
+    existing.rightFile = rightFile;
+    activateTab(existing.id);
+    return;
+  }
+
+  const t = { id: 'tab-' + (++tabCounter), title: sessionId, kind: 'session', sessionId, doc: null, report: null, reportMd: '', trace: [], file: null, previewMd: '', running: false, rightFile };
+  tabs.push(t);
+  activateTab(t.id);
+
+  const docResp = await fetch(`/api/audits/${sessionId}/document`);
+  if (docResp.ok) { t.doc = await docResp.json(); t.title = t.doc.sourceFileName || sessionId; renderLeftTabBar(); }
+  await fetchTabReport(t);
+  if (activeTabId === t.id) renderActiveTab();
+
+  let firstAt = null;
+  const es = new EventSource(`/api/audits/${sessionId}/events`);
+  es.addEventListener('audit', ev => {
+    const e = JSON.parse(ev.data);
+    if (!firstAt) firstAt = new Date(e.at).getTime();
+    const dt = ((new Date(e.at).getTime() - firstAt) / 1000).toFixed(1);
+    t.trace.push({ dt, agent: e.agent, type: e.type, message: e.message });
+    if (activeTabId === t.id && (t.running || t.rightFile === 'log')) renderRightPane();
+    if (e.type === 'REPORT_READY' || e.type === 'RUN_FAILED') {
+      es.close(); t.running = false;
+      fetchTabReport(t).then(() => { if (activeTabId === t.id) renderActiveTab(); });
+    }
+  });
+}
+
+function focusSectionOnRight(secId, findingId) {
+  $$('mark.on').forEach(m => m.classList.remove('on'));
+  if (findingId) {
+    const mark = document.querySelector(`mark[data-f="${findingId}"]`);
+    if (mark) mark.classList.add('on');
+  }
+  const t = activeTab();
+  if (!secId || !t) return;
+  if (t.rightFile !== 'fixed') { t.rightFile = 'fixed'; renderRightPane(); renderHistorySidebar(); }
+  const target = document.getElementById('fix-' + secId);
+  if (target) {
+    const exp = document.getElementById('exp-' + secId);
+    if (exp) exp.open = true;
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    target.classList.remove('flash'); void target.offsetWidth; target.classList.add('flash');
+    setTimeout(() => target.classList.remove('flash'), 1200);
+  }
+}
+
+// Markdown Renderer
 function renderMarkdown(rawText, sectionFindings) {
   let text = rawText ?? '';
   const marks = [];
-  // Inject placeholders for verbatim quotes BEFORE markdown parsing so tables/lists don't break matching
   for (const f of sectionFindings) {
     if (!f.quote) continue;
     const idx = text.indexOf(f.quote);
@@ -506,17 +1401,10 @@ function renderMarkdown(rawText, sectionFindings) {
       text = text.slice(0, idx) + token + text.slice(idx + f.quote.length);
     }
   }
-
   const lines = text.split('\n');
-  let html = '';
-  let inCode = false, codeBuf = [];
-  let inTable = false, tableRows = [];
-  let inList = false;
-
+  let html = '', inCode = false, codeBuf = [], inTable = false, tableRows = [], inList = false;
   const inline = s => {
-    let out = esc(s)
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+    let out = esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\*([^*]+)\*/g, '<i>$1</i>');
     for (const m of marks) {
       if (out.includes(m.token)) {
         const inner = esc(m.quote).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
@@ -525,7 +1413,6 @@ function renderMarkdown(rawText, sectionFindings) {
     }
     return out;
   };
-
   const flushTable = () => {
     if (!inTable) return;
     const rows = tableRows.filter(r => !/^\|[\s:|-]+\|$/.test(r.trim()));
@@ -541,27 +1428,25 @@ function renderMarkdown(rawText, sectionFindings) {
   const flushList = () => { if (inList) { html += '</ul>'; inList = false; } };
 
   for (const rawLine of lines) {
-    const line = rawLine.trimEnd();
-    if (line.trim().startsWith('```')) {
+    const line = rawLine.trimEnd(), tr = line.trim();
+    if (tr.startsWith('```')) {
       flushTable(); flushList();
       if (!inCode) { inCode = true; codeBuf = []; }
       else { html += `<pre class="codeblock">${inline(codeBuf.join('\n'))}</pre>`; inCode = false; }
       continue;
     }
     if (inCode) { codeBuf.push(line); continue; }
-
-    if (line.trim().startsWith('|') && line.trim().endsWith('|')) {
-      flushList(); inTable = true; tableRows.push(line.trim()); continue;
-    } else flushTable();
-
-    if (/^[-*•]\s+/.test(line.trim()) || /^\d+\.\s+/.test(line.trim())) {
+    if (tr.startsWith('|') && tr.endsWith('|')) { flushList(); inTable = true; tableRows.push(tr); continue; } else flushTable();
+    const hMatch = tr.match(/^(#{1,4})\s+(.*)$/);
+    if (hMatch) { flushList(); html += `<h${hMatch[1].length}>${inline(hMatch[2])}</h${hMatch[1].length}>`; continue; }
+    if (tr.startsWith('> ')) { flushList(); html += `<blockquote>${inline(tr.slice(2))}</blockquote>`; continue; }
+    if (/^[-*•]\s+/.test(tr) || /^\d+\.\s+/.test(tr)) {
       if (!inList) { html += '<ul>'; inList = true; }
-      html += `<li>${inline(line.trim().replace(/^([-*•]|\d+\.)\s+/, ''))}</li>`;
+      html += `<li>${inline(tr.replace(/^([-*•]|\d+\.)\s+/, ''))}</li>`;
       continue;
     } else flushList();
-
-    if (/^---+$/.test(line.trim())) { html += '<hr>'; continue; }
-    if (line.trim() === '') continue;
+    if (/^---+$/.test(tr)) { html += '<hr>'; continue; }
+    if (tr === '') continue;
     html += `<p>${inline(line)}</p>`;
   }
   flushTable(); flushList();
@@ -569,91 +1454,161 @@ function renderMarkdown(rawText, sectionFindings) {
   return html;
 }
 
-function renderDoc(findings) {
-  $('#doc').innerHTML = doc.sections.map(s => {
-    const secFindings = findings.filter(f => f.sectionId === s.id);
-    return `<div class="sec" id="sec-${esc(s.id)}">
-      <div class="sec-head"><span class="sec-id">${esc(s.id)}</span><h3>${esc(s.title)}</h3></div>
-      <div class="md">${renderMarkdown(s.text, secFindings)}</div>
-    </div>`;
-  }).join('');
-  document.querySelectorAll('mark').forEach(m => m.onclick = () => focusFinding(m.dataset.f, false));
+// Settings & RAG Knowledge Base Modal (Admin RBAC)
+let userRole = 'admin';
+const piiLabels = {
+  SECRET: 'Секреты / пароли',
+  IBAN: 'IBAN (KZ...)',
+  PAN: 'Номера карт PAN (Luhn)',
+  IIN: 'ИИН / БИН (mod-11)',
+  PHONE: 'Телефоны (международные и локальные)',
+  EMAIL: 'Email',
+  IP: 'IPv4-адреса',
+};
+
+function applyRoleUi() {
+  const isRo = userRole === 'analyst';
+  $('#role-admin').classList.toggle('active', !isRo);
+  $('#role-analyst').classList.toggle('active', isRo);
+  $('#ro-banner').classList.toggle('visible', isRo);
+  const pill = $('#sidebar-role-pill');
+  pill.textContent = isRo ? 'Analyst' : 'Admin';
+  pill.classList.toggle('ro', isRo);
+  $$('#settings-modal .admin-ctrl').forEach(el => { el.disabled = isRo; });
 }
 
-function sevPalette(sev) {
-  return { Blocker: 'sg-rose', Critical: 'sg-amber', Major: 'sg-lagoon', Minor: 'sg-lilac' }[sev] || 'sg-clear';
-}
+$('#role-admin').onclick = () => { userRole = 'admin'; applyRoleUi(); };
+$('#role-analyst').onclick = () => { userRole = 'analyst'; applyRoleUi(); };
 
-async function loadReport() {
-  const j = await (await fetch(`/api/audits/${session}`)).json();
-  if (j.status !== 'done') {
-    $('#cards').innerHTML = '<div class="card sg sg-rose"><b>Аудит не завершён</b> — проверьте Live Trace выше.</div>';
-    return;
+async function openSettingsModal() {
+  $('#settings-modal').classList.add('open');
+  $('#settings-status').textContent = 'Загрузка…';
+  try {
+    const [setRes, kbRes] = await Promise.all([fetch('/api/settings'), fetch('/api/knowledge')]);
+    const s = await setRes.json();
+    const kb = await kbRes.json();
+
+    $('#set-minsev').value = s.patches.minSeverity;
+    $('#set-maxpatches').value = s.patches.maxPatches;
+    $('#set-maxrounds').value = s.patches.maxRounds;
+    $('#set-parallel').value = s.patches.parallelism;
+    includeGherkinInFixed = !!s.patches.includeGherkinInFixed;
+    $('#set-gherkin-in-fixed').checked = includeGherkinInFixed;
+
+    $('#set-model').value = s.model.defaultModel;
+    $('#set-effort').value = s.model.defaultEffort;
+    $('#set-llm-info').textContent = `Провайдер: ${s.model.provider} · Endpoint: ${s.model.endpoint}`;
+
+    $('#set-pii-enabled').checked = !!s.pii.enabled;
+    $('#set-pii-kinds').innerHTML = Object.entries(s.pii.kinds).map(([k, on]) => `
+      <label class="pii-chk">
+        <input type="checkbox" class="admin-ctrl pii-kind-cb" data-kind="${esc(k)}" ${on ? 'checked' : ''}>
+        ${esc(piiLabels[k] || k)}
+      </label>`).join('');
+
+    renderKbList(kb);
+    applyRoleUi();
+    $('#settings-status').textContent = 'Применяется ко всем новым проверкам ТЗ';
+  } catch (e) {
+    $('#settings-status').textContent = 'Ошибка загрузки настроек';
   }
-  const rep = j.report;
-  const scoreEl = $('#score');
-  scoreEl.textContent = `Quality Score: ${rep.qualityScore}/100`;
-  scoreEl.className = `pill sg ${rep.qualityScore >= 80 ? 'sg-mint' : rep.qualityScore >= 50 ? 'sg-amber' : 'sg-rose'}`;
-  scoreEl.style.display = 'inline-flex';
+}
 
-  // Wire download buttons
-  $('#dl-report').href = `/api/audits/${session}/export/report.md`;
-  $('#dl-fixed').href = `/api/audits/${session}/export/fixed.md`;
-  $('#exports').classList.add('visible');
-
-  renderDoc(rep.findings);
-  const patches = Object.fromEntries(rep.patches.map(p => [p.findingId, p]));
-
-  $('#cards').innerHTML = rep.findings.length ? rep.findings.map(f => {
-    const p = patches[f.id];
-    return `<div class="card sg ${sevPalette(f.severity)}" id="card-${esc(f.id)}" data-f="${esc(f.id)}">
-      <div class="card-top">
-        <span class="sev-badge">${esc(f.severity)} · ${esc(f.id)}</span>
-        <span class="card-meta" style="margin:0">раздел ${esc(f.sectionId)}</span>
+function renderKbList(files) {
+  const box = $('#kb-list');
+  if (!files.length) { box.innerHTML = '<span class="empty">База знаний пуста.</span>'; return; }
+  box.innerHTML = files.map(f => `
+    <div class="kb-row">
+      <div style="min-width:0">
+        <span class="kb-name">${esc(f.name)}</span>
+        <span class="kb-meta">${(f.sizeBytes / 1024).toFixed(1)} КБ</span>
+        ${f.builtIn ? '<span class="sev Ok" style="margin-left:6px">Стандарт</span>' : '<span class="sev Major" style="margin-left:6px">Референс банка</span>'}
       </div>
-      <div class="card-title">${esc(f.title)}</div>
-      <div class="card-desc">${esc(f.description)}</div>
-      <div class="card-meta">агенты: ${f.agents.map(esc).join(', ')}${f.standardRef ? ' · ' + esc(f.standardRef) : ''}</div>
-      ${f.recommendation ? `<details><summary>💡 Рекомендация</summary><div style="margin-top:6px">${esc(f.recommendation)}</div></details>` : ''}
-      ${p ? `<details><summary>🛠 Патч (${p.verified ? '✅ проверен' : '⚠️ требует проверки'}, раундов: ${p.rounds})</summary>
-        <div class="diff">
-          <div class="diff-col"><b>Было</b><pre>${esc(p.before)}</pre></div>
-          <div class="diff-col"><b>Стало</b><pre>${esc(p.after)}</pre></div>
-        </div>
-        ${p.gherkin ? `<div class="gherkin"><b>Gherkin (Given / When / Then)</b><pre>${esc(p.gherkin)}</pre></div>` : ''}
-      </details>` : ''}
-      <details><summary>⚖️ Почему арбитр оставил</summary><div style="margin-top:6px">${esc(f.rationale || 'Подтверждено заземлением цитаты.')}</div></details>
-      <div class="ask"><input placeholder="@compliance проверь на IDOR…" data-s="${esc(f.sectionId)}"><button class="btn sg sg-clear" style="padding:6px 14px">Спросить</button></div>
-    </div>`;
-  }).join('') : '<div class="card sg sg-mint"><b>Дефектов не найдено!</b></div>';
-
-  document.querySelectorAll('.card').forEach(c => c.onclick = e => {
-    if (e.target.closest('details,.ask')) return;
-    focusFinding(c.dataset.f, true);
-  });
-
-  document.querySelectorAll('.ask button').forEach(b => b.onclick = async () => {
-    const input = b.previousElementSibling, m = input.value.match(/^@(\w+)\s+(.*)$/);
-    if (!m) { input.value = '@compliance ' + input.value; return; }
-    b.disabled = true;
-    const r = await fetch(`/api/audits/${session}/ask`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agent: m[1], sectionId: input.dataset.s, question: m[2] })
+      ${f.builtIn ? '' : `<button type="button" class="btn admin-ctrl" data-kb-del="${esc(f.name)}" style="height:24px;font-size:11px;padding:0 8px">Удалить</button>`}
+    </div>`).join('');
+  box.querySelectorAll('[data-kb-del]').forEach(btn => btn.onclick = async () => {
+    const name = btn.dataset.kbDel;
+    btn.disabled = true;
+    const r = await fetch(`/api/knowledge/${encodeURIComponent(name)}`, {
+      method: 'DELETE', headers: { 'X-SpecAgent-Role': userRole }
     });
-    const a = await r.json(); b.disabled = false;
-    b.parentElement.insertAdjacentHTML('afterend', `<div class="ask-reply"><b>@${esc(m[1])}:</b> ${esc(a.answer || a.error)}</div>`);
+    if (r.ok) {
+      const kb = await (await fetch('/api/knowledge')).json();
+      renderKbList(kb); applyRoleUi();
+      $('#settings-status').textContent = `Удалено: ${name} (RAG переиндексирован)`;
+    } else {
+      const err = await r.json().catch(() => ({}));
+      $('#settings-status').textContent = err.error || 'Ошибка удаления';
+      btn.disabled = false;
+    }
   });
 }
 
-function focusFinding(id, scrollDoc) {
-  document.querySelectorAll('mark.on').forEach(m => m.classList.remove('on'));
-  const mark = document.querySelector(`mark[data-f="${id}"]`);
-  if (mark) {
-    mark.classList.add('on');
-    if (scrollDoc) mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+$('#btn-settings').onclick = openSettingsModal;
+$('#settings-close').onclick = () => $('#settings-modal').classList.remove('open');
+$('#settings-cancel').onclick = () => $('#settings-modal').classList.remove('open');
+$('#settings-modal').onclick = e => { if (e.target === $('#settings-modal')) $('#settings-modal').classList.remove('open'); };
+
+$('#kb-add-btn').onclick = () => $('#kb-file').click();
+$('#kb-file').onchange = async () => {
+  const f = $('#kb-file').files[0]; if (!f) return;
+  $('#kb-file').value = '';
+  $('#settings-status').textContent = `Загрузка и индексация ${f.name} в Qdrant…`;
+  const body = new FormData(); body.append('file', f);
+  const r = await fetch('/api/knowledge', { method: 'POST', headers: { 'X-SpecAgent-Role': userRole }, body });
+  if (r.ok) {
+    const kb = await (await fetch('/api/knowledge')).json();
+    renderKbList(kb); applyRoleUi();
+    $('#settings-status').textContent = `Добавлено в RAG: ${f.name}`;
+  } else {
+    const err = await r.json().catch(() => ({}));
+    $('#settings-status').textContent = err.error || 'Ошибка загрузки документа';
   }
-  if (!scrollDoc) document.getElementById('card-' + id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-}
+};
+
+$('#settings-save').onclick = async () => {
+  const kinds = {};
+  $$('.pii-kind-cb').forEach(cb => { kinds[cb.dataset.kind] = cb.checked; });
+  const payload = {
+    patches: {
+      minSeverity: $('#set-minsev').value,
+      maxPatches: Number($('#set-maxpatches').value) || 15,
+      maxRounds: Number($('#set-maxrounds').value) || 1,
+      parallelism: Number($('#set-parallel').value) || 6,
+      includeGherkinInFixed: $('#set-gherkin-in-fixed').checked,
+    },
+    model: {
+      defaultModel: $('#set-model').value,
+      defaultEffort: $('#set-effort').value,
+    },
+    pii: {
+      enabled: $('#set-pii-enabled').checked,
+      kinds,
+    },
+  };
+  const r = await fetch('/api/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-SpecAgent-Role': userRole },
+    body: JSON.stringify(payload),
+  });
+  if (r.ok) {
+    includeGherkinInFixed = payload.patches.includeGherkinInFixed;
+    $('#sb-model').textContent = `${payload.model.defaultModel} (${payload.model.defaultEffort}) · Qdrant · Postgres`;
+    $('#settings-status').textContent = '✓ Настройки сохранены и применены';
+    renderRightPane();
+  } else {
+    const err = await r.json().catch(() => ({}));
+    $('#settings-status').textContent = err.error || 'Ошибка сохранения';
+  }
+};
+
+// Init: open latest completed session (0 tokens!)
+(async () => {
+  await refreshSessionDropdown();
+  const latest = recentSessions.find(s => s.status === 'completed') || recentSessions[0];
+  if (latest) await openSessionInTab(latest.sessionId, 'fixed');
+  else createNewTab();
+})();
 </script>
 </body>
 </html>

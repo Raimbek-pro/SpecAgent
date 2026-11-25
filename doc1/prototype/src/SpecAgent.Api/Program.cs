@@ -1,10 +1,15 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Options;
+using Npgsql;
 using SpecAgent.Agents;
 using SpecAgent.Agents.Agents;
+using SpecAgent.Agents.Knowledge;
+using SpecAgent.Agents.Llm;
 using SpecAgent.Agents.Orchestration;
 using SpecAgent.Agents.Storage;
 using SpecAgent.Agents.Tools;
+using SpecAgent.Api.Export;
 using SpecAgent.Core.Documents;
 using SpecAgent.Core.Events;
 using SpecAgent.Core.Findings;
@@ -30,15 +35,56 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
 var api = app.MapGroup("/api/audits");
 
+// 0. List recent saved sessions (from Postgres) with document names & scores so UI can reopen past audits with 0 LLM tokens.
+api.MapGet("/recent", async (IServiceProvider sp, CancellationToken ct) =>
+{
+    var ds = sp.GetService<NpgsqlDataSource>();
+    if (ds is null) return Results.Ok(Array.Empty<object>());
+    await using var cmd = ds.CreateCommand("""
+        SELECT s.session_id,
+               s.status,
+               s.last_seq,
+               s.updated_at,
+               (SELECT e.payload->'document'->>'sourceFileName' FROM audit_events e WHERE e.session_id = s.session_id AND e.type = 'TZ_INGESTED' LIMIT 1) AS file_name,
+               (SELECT e.payload->'document'->>'title' FROM audit_events e WHERE e.session_id = s.session_id AND e.type = 'TZ_INGESTED' LIMIT 1) AS doc_title,
+               (SELECT (e.payload->>'qualityScore')::int FROM audit_events e WHERE e.session_id = s.session_id AND e.type = 'REPORT_READY' ORDER BY e.seq DESC LIMIT 1) AS score
+        FROM audit_sessions s
+        ORDER BY s.updated_at DESC
+        LIMIT 20
+        """);
+    await using var r = await cmd.ExecuteReaderAsync(ct);
+    var list = new List<object>();
+    while (await r.ReadAsync(ct))
+    {
+        list.Add(new
+        {
+            sessionId = r.GetString(0),
+            status = r.GetString(1),
+            events = r.GetInt64(2),
+            updatedAt = r.GetDateTime(3),
+            fileName = r.IsDBNull(4) ? r.GetString(0) : r.GetString(4),
+            title = r.IsDBNull(5) ? "" : r.GetString(5),
+            score = r.IsDBNull(6) ? (int?)null : r.GetInt32(6),
+        });
+    }
+    return Results.Ok(list);
+});
+
 // 1. Upload → parse → mask → TZ_INGESTED → enqueue. Returns immediately; progress is streamed over SSE.
+var uploadsDir = Path.Combine(app.Environment.ContentRootPath, "uploads");
+Directory.CreateDirectory(uploadsDir);
+
 api.MapPost("/", async (IFormFile file, DocumentParserRegistry parsers, PiiMasker masker, IEventStore events,
     IPiiVault vault, AuditQueue queue, CancellationToken ct) =>
 {
+    var ms = new MemoryStream();
+    await file.CopyToAsync(ms, ct);
+    ms.Position = 0;
+
     TzDocument parsed;
     try
     {
-        await using var stream = file.OpenReadStream();
-        parsed = parsers.Parse(stream, file.FileName);
+        parsed = parsers.Parse(ms, file.FileName);
     }
     catch (Exception ex) when (ex is NotSupportedException or InvalidDataException)
     {
@@ -46,6 +92,10 @@ api.MapPost("/", async (IFormFile file, DocumentParserRegistry parsers, PiiMaske
     }
 
     var sessionId = $"s-{Guid.NewGuid():N}"[..14];
+    var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+    if (ext is ".pdf" or ".docx" or ".md" or ".txt")
+        await File.WriteAllBytesAsync(Path.Combine(uploadsDir, $"{sessionId}{ext}"), ms.ToArray(), ct);
+
     var masked = masker.Mask(sessionId, parsed);
     await events.AppendAsync(sessionId, EventTypes.TzIngested, "ingestion",
         $"{masked.Sections.Count} sections, {vault.Count(sessionId)} PII values masked",
@@ -163,11 +213,12 @@ api.MapGet("/{id}/export/report.md", async (string id, IEventStore events, PiiMa
 
     var model = config["ModelRouting:Default:Model"] ?? "gemini-flash-lite-latest";
     var md = ToolGateway.RenderReportMarkdown(demaskedDoc, demaskedReport, model);
-    return Results.File(Encoding.UTF8.GetBytes(md), "text/markdown; charset=utf-8", $"specagent-report-{id}.md");
+    var baseName = Path.GetFileNameWithoutExtension(doc.SourceFileName);
+    return Results.File(Encoding.UTF8.GetBytes(md), "text/markdown; charset=utf-8", $"{baseName}-report.md");
 });
 
 // 9. Export patched/fixed specification Markdown file (demasked).
-api.MapGet("/{id}/export/fixed.md", async (string id, IEventStore events, PiiMasker masker, CancellationToken ct) =>
+api.MapGet("/{id}/export/fixed.md", async (string id, IEventStore events, PiiMasker masker, IOptions<PatchOptions> patchOpts, CancellationToken ct) =>
 {
     var log = await events.ReadAsync(id, ct: ct);
     var state = AuditState.From(log);
@@ -182,9 +233,241 @@ api.MapGet("/{id}/export/fixed.md", async (string id, IEventStore events, PiiMas
         Patches = rawReport.Patches.Select(p => p with { Before = D(p.Before), After = D(p.After), Gherkin = D(p.Gherkin) }).ToList(),
     };
 
-    var md = ToolGateway.RenderPatchedDocumentMarkdown(demaskedDoc, demaskedReport);
+    var md = ToolGateway.RenderPatchedDocumentMarkdown(demaskedDoc, demaskedReport, patchOpts.Value.IncludeGherkinInFixed);
     var baseName = Path.GetFileNameWithoutExtension(doc.SourceFileName);
     return Results.File(Encoding.UTF8.GetBytes(md), "text/markdown; charset=utf-8", $"{baseName}-fixed.md");
+});
+
+// 9b. Export clean patched PDF (inline for iframe preview or ?download=1 for file download).
+api.MapGet("/{id}/export/fixed.pdf", async (string id, bool? download, IEventStore events, PiiMasker masker, IOptions<PatchOptions> patchOpts, HttpResponse resp, CancellationToken ct) =>
+{
+    var log = await events.ReadAsync(id, ct: ct);
+    var state = AuditState.From(log);
+    var ready = log.LastOrDefault(e => e.Type == EventTypes.ReportReady);
+    if (state.Document is not { } doc || ready is null) return Results.NotFound();
+
+    string D(string s) => masker.Demask(id, s);
+    var demaskedDoc = doc with { Sections = doc.Sections.Select(s => s with { Title = D(s.Title), Text = D(s.Text) }).ToList() };
+    var rawReport = ready.Get<AuditReport>();
+    var demaskedReport = rawReport with
+    {
+        Patches = rawReport.Patches.Select(p => p with { Before = D(p.Before), After = D(p.After), Gherkin = D(p.Gherkin) }).ToList(),
+    };
+
+    var pdfBytes = DocumentExporter.RenderPdf(demaskedDoc, demaskedReport, patchOpts.Value.IncludeGherkinInFixed);
+    var baseName = Path.GetFileNameWithoutExtension(doc.SourceFileName);
+    if (download == true)
+        return Results.File(pdfBytes, "application/pdf", $"{baseName}-fixed.pdf");
+    resp.Headers.ContentDisposition = $"inline; filename=\"{baseName}-fixed.pdf\"";
+    return Results.Bytes(pdfBytes, "application/pdf");
+});
+
+// 9c. Export clean patched DOCX (OpenXML).
+api.MapGet("/{id}/export/fixed.docx", async (string id, IEventStore events, PiiMasker masker, IOptions<PatchOptions> patchOpts, CancellationToken ct) =>
+{
+    var log = await events.ReadAsync(id, ct: ct);
+    var state = AuditState.From(log);
+    var ready = log.LastOrDefault(e => e.Type == EventTypes.ReportReady);
+    if (state.Document is not { } doc || ready is null) return Results.NotFound();
+
+    string D(string s) => masker.Demask(id, s);
+    var demaskedDoc = doc with { Sections = doc.Sections.Select(s => s with { Title = D(s.Title), Text = D(s.Text) }).ToList() };
+    var rawReport = ready.Get<AuditReport>();
+    var demaskedReport = rawReport with
+    {
+        Patches = rawReport.Patches.Select(p => p with { Before = D(p.Before), After = D(p.After), Gherkin = D(p.Gherkin) }).ToList(),
+    };
+
+    var docxBytes = DocumentExporter.RenderDocx(demaskedDoc, demaskedReport, patchOpts.Value.IncludeGherkinInFixed);
+    var baseName = Path.GetFileNameWithoutExtension(doc.SourceFileName);
+    return Results.File(docxBytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", $"{baseName}-fixed.docx");
+});
+
+// 9d. Original document as PDF (returns uploaded PDF verbatim if present, otherwise renders clean original PDF).
+api.MapGet("/{id}/original.pdf", async (string id, IEventStore events, PiiMasker masker, HttpResponse resp, CancellationToken ct) =>
+{
+    var savedPdf = Path.Combine(uploadsDir, $"{id}.pdf");
+    if (File.Exists(savedPdf))
+    {
+        resp.Headers.ContentDisposition = $"inline; filename=\"{id}-original.pdf\"";
+        return Results.Bytes(await File.ReadAllBytesAsync(savedPdf, ct), "application/pdf");
+    }
+    var state = AuditState.From(await events.ReadAsync(id, ct: ct));
+    if (state.Document is not { } doc) return Results.NotFound();
+    string D(string s) => masker.Demask(id, s);
+    var demaskedDoc = doc with { Sections = doc.Sections.Select(s => s with { Title = D(s.Title), Text = D(s.Text) }).ToList() };
+    var pdfBytes = DocumentExporter.RenderPdf(demaskedDoc, null);
+    var baseName = Path.GetFileNameWithoutExtension(doc.SourceFileName);
+    resp.Headers.ContentDisposition = $"inline; filename=\"{baseName}.pdf\"";
+    return Results.Bytes(pdfBytes, "application/pdf");
+});
+
+// 10. Runtime Settings (Patches, Model Routing, PII Masking) — Admin-only mutation.
+static bool IsAnalystRole(HttpRequest req) =>
+    string.Equals(req.Headers["X-SpecAgent-Role"].ToString(), "analyst", StringComparison.OrdinalIgnoreCase);
+
+app.MapGet("/api/settings", (IOptions<PatchOptions> patchOpts, IOptions<ModelRoutingOptions> modelOpts, PiiMasker masker, IConfiguration config) =>
+{
+    var p = patchOpts.Value;
+    var m = modelOpts.Value;
+    return Results.Ok(new
+    {
+        patches = new
+        {
+            minSeverity = p.MinSeverity.ToString(),
+            maxPatches = p.MaxPatches,
+            maxRounds = p.MaxRounds,
+            parallelism = p.Parallelism,
+            includeGherkinInFixed = p.IncludeGherkinInFixed,
+        },
+        model = new
+        {
+            defaultModel = m.Default.Model,
+            defaultEffort = m.Default.Effort,
+            provider = config["Llm:Provider"] ?? "OpenAiCompatible",
+            endpoint = config["Llm:Endpoint"] ?? "https://api.moonshot.ai/v1",
+            availableModels = new[] { "kimi-k3", "kimi-k3.1-pro" },
+            availableEfforts = new[] { "low", "high", "max" },
+        },
+        pii = new
+        {
+            enabled = masker.Enabled,
+            kinds = PiiMasker.AllKinds.ToDictionary(k => k, k => masker.EnabledKinds.Contains(k)),
+        },
+    });
+});
+
+app.MapPut("/api/settings", (HttpRequest req, SettingsUpdateRequest body, IOptions<PatchOptions> patchOpts, IOptions<ModelRoutingOptions> modelOpts, PiiMasker masker) =>
+{
+    if (IsAnalystRole(req))
+        return Results.Json(new { error = "Только администратор может изменять настройки." }, statusCode: 403);
+
+    if (body.Patches is { } p)
+    {
+        if (Enum.TryParse<Severity>(p.MinSeverity, true, out var sev)) patchOpts.Value.MinSeverity = sev;
+        patchOpts.Value.MaxPatches = Math.Clamp(p.MaxPatches, 1, 50);
+        patchOpts.Value.MaxRounds = Math.Clamp(p.MaxRounds, 1, 3);
+        patchOpts.Value.Parallelism = Math.Clamp(p.Parallelism, 1, 10);
+        patchOpts.Value.IncludeGherkinInFixed = p.IncludeGherkinInFixed;
+    }
+
+    if (body.Model is { } m)
+    {
+        if (!string.IsNullOrWhiteSpace(m.DefaultModel))
+        {
+            modelOpts.Value.Default.Model = m.DefaultModel.Trim();
+            foreach (var ag in modelOpts.Value.Agents.Values) ag.Model = m.DefaultModel.Trim();
+        }
+        if (!string.IsNullOrWhiteSpace(m.DefaultEffort))
+        {
+            modelOpts.Value.Default.Effort = m.DefaultEffort.Trim();
+            foreach (var ag in modelOpts.Value.Agents.Values) ag.Effort = m.DefaultEffort.Trim();
+        }
+    }
+
+    if (body.Pii is { } pii)
+    {
+        masker.Enabled = pii.Enabled;
+        if (pii.Kinds is not null)
+        {
+            masker.EnabledKinds = new HashSet<string>(
+                pii.Kinds.Where(kv => kv.Value).Select(kv => kv.Key),
+                StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    return Results.Ok(new { status = "saved" });
+});
+
+// 11. RAG Knowledge Base reference documents (list / upload / delete) — Admin-only mutation.
+var builtInKbFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+{
+    "iso-29148-requirements-standard.md",
+    "mandatory-checklist.md",
+    "fintech-kz-standards.md",
+    "banking-architecture-patterns.md",
+};
+
+static string ResolveKbDir(IKnowledgeBase kb, IConfiguration config, string contentRoot)
+{
+    if (kb is SemanticKnowledgeBase skb) return skb.DirectoryPath;
+    var kbPath = config["Knowledge:Path"] ?? "knowledge";
+    return Path.IsPathRooted(kbPath) ? kbPath : Path.GetFullPath(Path.Combine(contentRoot, kbPath));
+}
+
+app.MapGet("/api/knowledge", (IKnowledgeBase kb, IConfiguration config, IWebHostEnvironment env) =>
+{
+    var dir = ResolveKbDir(kb, config, env.ContentRootPath);
+    if (!Directory.Exists(dir)) return Results.Ok(Array.Empty<object>());
+
+    var files = Directory.EnumerateFiles(dir, "*.md", SearchOption.TopDirectoryOnly)
+        .Select(path => new FileInfo(path))
+        .OrderByDescending(f => builtInKbFiles.Contains(f.Name))
+        .ThenBy(f => f.Name)
+        .Select(f => new
+        {
+            name = f.Name,
+            sizeBytes = f.Length,
+            updatedAt = f.LastWriteTimeUtc,
+            builtIn = builtInKbFiles.Contains(f.Name),
+        })
+        .ToList();
+    return Results.Ok(files);
+});
+
+app.MapPost("/api/knowledge", async (HttpRequest req, IFormFile file, DocumentParserRegistry parsers, IKnowledgeBase kb, IConfiguration config, IWebHostEnvironment env) =>
+{
+    if (IsAnalystRole(req))
+        return Results.Json(new { error = "Только администратор может добавлять документы в базу знаний RAG." }, statusCode: 403);
+
+    var dir = ResolveKbDir(kb, config, env.ContentRootPath);
+    Directory.CreateDirectory(dir);
+
+    var rawName = Path.GetFileNameWithoutExtension(file.FileName);
+    var safeBase = string.Concat(rawName.Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : '-')).Trim('-');
+    if (string.IsNullOrWhiteSpace(safeBase)) safeBase = $"ref-{Guid.NewGuid():N}"[..12];
+    var targetPath = Path.Combine(dir, $"{safeBase}.md");
+
+    string mdContent;
+    if (file.FileName.EndsWith(".md", StringComparison.OrdinalIgnoreCase) || file.FileName.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
+    {
+        using var sr = new StreamReader(file.OpenReadStream(), Encoding.UTF8);
+        mdContent = await sr.ReadToEndAsync();
+    }
+    else
+    {
+        await using var stream = file.OpenReadStream();
+        var parsed = parsers.Parse(stream, file.FileName);
+        var sb = new StringBuilder().AppendLine($"# {parsed.Title}").AppendLine();
+        foreach (var s in parsed.Sections)
+        {
+            if (!string.IsNullOrWhiteSpace(s.Title)) sb.AppendLine($"## {s.Id} {s.Title}");
+            sb.AppendLine(s.Text).AppendLine();
+        }
+        mdContent = sb.ToString();
+    }
+
+    await File.WriteAllTextAsync(targetPath, mdContent, Encoding.UTF8);
+    if (kb is SemanticKnowledgeBase skb) await skb.ReloadAsync();
+    return Results.Ok(new { name = Path.GetFileName(targetPath), sizeBytes = Encoding.UTF8.GetByteCount(mdContent) });
+}).DisableAntiforgery();
+
+app.MapDelete("/api/knowledge/{name}", async (HttpRequest req, string name, IKnowledgeBase kb, IConfiguration config, IWebHostEnvironment env) =>
+{
+    if (IsAnalystRole(req))
+        return Results.Json(new { error = "Только администратор может удалять документы из базы знаний RAG." }, statusCode: 403);
+
+    var safe = Path.GetFileName(name);
+    if (string.IsNullOrWhiteSpace(safe) || !safe.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+        return Results.BadRequest(new { error = "Некорректное имя файла." });
+
+    var dir = ResolveKbDir(kb, config, env.ContentRootPath);
+    var path = Path.Combine(dir, safe);
+    if (!File.Exists(path)) return Results.NotFound();
+
+    File.Delete(path);
+    if (kb is SemanticKnowledgeBase skb) await skb.ReloadAsync();
+    return Results.Ok(new { deleted = safe });
 });
 
 app.Run();
@@ -215,5 +498,9 @@ static void LoadDotEnv()
 }
 
 public sealed record AskRequest(string Agent, string SectionId, string Question);
+public sealed record PatchSettingsDto(string MinSeverity, int MaxPatches, int MaxRounds, int Parallelism, bool IncludeGherkinInFixed = false);
+public sealed record ModelSettingsDto(string DefaultModel, string DefaultEffort);
+public sealed record PiiSettingsDto(bool Enabled, Dictionary<string, bool>? Kinds);
+public sealed record SettingsUpdateRequest(PatchSettingsDto? Patches, ModelSettingsDto? Model, PiiSettingsDto? Pii);
 
 public partial class Program;

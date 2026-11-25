@@ -19,9 +19,27 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
     private readonly string _directory;
     private readonly string _cachePath;
     private readonly IEmbeddingClient _embeddings;
-    private readonly MarkdownKnowledgeBase _keywordFallback;
+    private MarkdownKnowledgeBase _keywordFallback;
     private readonly QdrantClient? _qdrant;
     private readonly ILogger<SemanticKnowledgeBase> _logger;
+
+    public string DirectoryPath => _directory;
+
+    public async Task ReloadAsync()
+    {
+        await _initLock.WaitAsync();
+        try
+        {
+            _initialized = false;
+            _chunks.Clear();
+            _keywordFallback = new MarkdownKnowledgeBase(_directory);
+        }
+        finally
+        {
+            _initLock.Release();
+        }
+        await EnsureInitializedAsync();
+    }
 
     private readonly List<VectorChunk> _chunks = [];
     private readonly SemaphoreSlim _initLock = new(1, 1);

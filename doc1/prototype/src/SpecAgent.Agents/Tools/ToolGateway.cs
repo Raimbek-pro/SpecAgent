@@ -133,7 +133,7 @@ public sealed class ToolGateway(IEventStore events, IKnowledgeBase kb)
     }
 
     /// <summary>Applies generated patches to the original document and renders a fixed Markdown specification.</summary>
-    public static string RenderPatchedDocumentMarkdown(TzDocument doc, AuditReport report)
+    public static string RenderPatchedDocumentMarkdown(TzDocument doc, AuditReport report, bool includeGherkin = false)
     {
         var patchBySection = report.Patches
             .GroupBy(p => p.SectionId)
@@ -152,10 +152,10 @@ public sealed class ToolGateway(IEventStore events, IKnowledgeBase kb)
             if (patchBySection.TryGetValue(s.Id, out var patch) && !string.IsNullOrWhiteSpace(patch.After))
             {
                 sb.AppendLine(patch.After.Trim());
-                if (!string.IsNullOrWhiteSpace(patch.Gherkin))
+                if (includeGherkin && !string.IsNullOrWhiteSpace(patch.Gherkin))
                 {
                     sb.AppendLine();
-                    sb.AppendLine("### Критерии приёмки (добавлено SpecAgent)");
+                    sb.AppendLine("### Критерии приёмки (Gherkin)");
                     sb.AppendLine("```gherkin");
                     sb.AppendLine(patch.Gherkin.Trim());
                     sb.AppendLine("```");

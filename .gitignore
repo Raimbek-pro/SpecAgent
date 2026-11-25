@@ -1,5 +1,11 @@
 .env
 .env.local
+**/.env
+.DS_Store
+**/.DS_Store
+.impeccable/
+**/uploads/
+**/.embeddings-cache.json
 **/bin/
 **/obj/
 **/*.user

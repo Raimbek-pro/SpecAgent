@@ -21,8 +21,13 @@ RUN dotnet publish doc1/prototype/src/SpecAgent.Api/SpecAgent.Api.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 
+# Install DejaVu Sans fonts for crisp Cyrillic PDF generation (QuestPDF)
+RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core && rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/publish .
 COPY doc1/prototype/knowledge ./knowledge
+
+RUN mkdir -p /app/uploads && chown -R $APP_UID /app/uploads /app/knowledge
 
 ENV ASPNETCORE_URLS=http://+:8080
 ENV Knowledge__Path=/app/knowledge

@@ -17,7 +17,8 @@ public sealed partial class PiiMasker(IPiiVault vault)
     [GeneratedRegex(@"\bKZ\d{2}[A-Z0-9]{16}\b", RegexOptions.IgnoreCase)] private static partial Regex Iban();
     [GeneratedRegex(@"\b(?:\d[ -]?){12,18}\d\b")] private static partial Regex Pan();
     [GeneratedRegex(@"\b\d{12}\b")] private static partial Regex Iin();
-    [GeneratedRegex(@"(?<!\d)(?:\+7|8)[\s\-(]*\d{3}[\s\-)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}(?!\d)")] private static partial Regex Phone();
+    // International E.164 / formatted phones (+1, +44, +7, +998, etc.) and local CIS 8-xxx numbers.
+    [GeneratedRegex(@"(?<!\d)(?:\+\d{1,3}[\s\-()]*(?:\d[\s\-()]*){8,13}\d|8[\s\-(]*\d{3}[\s\-)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2})(?!\d)")] private static partial Regex Phone();
     [GeneratedRegex(@"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")] private static partial Regex Email();
     [GeneratedRegex(@"\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b")] private static partial Regex Ipv4();
     [GeneratedRegex(@"(?i)\b(?:api[_-]?key|secret|token|password|пароль)\s*[:=]\s*\S{6,}")] private static partial Regex Secret();
@@ -29,12 +30,17 @@ public sealed partial class PiiMasker(IPiiVault vault)
         new("IBAN", Iban()),
         new("PAN", Pan(), v => Luhn(Digits(v))),
         new("IIN", Iin(), IsValidIin),
-        new("PHONE", Phone()),
+        new("PHONE", Phone(), v => Digits(v).Length is >= 10 and <= 15),
         new("EMAIL", Email()),
         new("IP", Ipv4()),
     ];
 
-    public TzDocument Mask(string sessionId, TzDocument doc) => doc with
+    public static readonly string[] AllKinds = ["SECRET", "IBAN", "PAN", "IIN", "PHONE", "EMAIL", "IP"];
+
+    public bool Enabled { get; set; } = true;
+    public HashSet<string> EnabledKinds { get; set; } = new(AllKinds, StringComparer.OrdinalIgnoreCase);
+
+    public TzDocument Mask(string sessionId, TzDocument doc) => !Enabled ? doc : doc with
     {
         Title = Mask(sessionId, doc.Title),
         Sections = doc.Sections.Select(s => s with { Title = Mask(sessionId, s.Title), Text = Mask(sessionId, s.Text) }).ToList(),
@@ -42,8 +48,10 @@ public sealed partial class PiiMasker(IPiiVault vault)
 
     public string Mask(string sessionId, string text)
     {
+        if (!Enabled) return text;
         foreach (var rule in Rules)
         {
+            if (!EnabledKinds.Contains(rule.Kind)) continue;
             text = rule.Pattern.Replace(text, m =>
             {
                 if (m.Value.StartsWith('[')) return m.Value;

@@ -45,6 +45,7 @@ public sealed class CriticAgent(CriticProfile profile, ILlmClient llm, PromptLib
             Agent = Name,
             System = prompts.System(profile.Prompt),
             User = user,
+            MaxTokens = 4096,
         }, ct);
 
         return output.Findings.Select((f, i) => ToRaw(f, $"{Name}-{i + 1}")).ToList();
