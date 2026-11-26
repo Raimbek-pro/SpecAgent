@@ -195,3 +195,9 @@ SpecAgent uses ASP.NET Core Authentication & Authorization policies (`AdminOnly`
 ## Roadmap & Backend Handoff
 
 See [BACKEND_TODO.md](BACKEND_TODO.md) for the prioritized backend engineering backlog (enterprise RBAC/OIDC, encrypted PII Vault, persistent settings/storage, CLI single-command runner, and security hardening).
+
+---
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
