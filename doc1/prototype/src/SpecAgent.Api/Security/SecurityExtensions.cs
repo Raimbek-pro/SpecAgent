@@ -162,10 +162,15 @@ public static class SecurityExtensions
                 h.TryAdd("X-Frame-Options", "SAMEORIGIN");
                 h.TryAdd("Referrer-Policy", "strict-origin-when-cross-origin");
                 h.TryAdd("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
-                h.TryAdd("Content-Security-Policy",
-                    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
-                    "img-src 'self' data: blob:; frame-src 'self' blob:; connect-src 'self'; " +
-                    "object-src 'none'; base-uri 'self'; frame-ancestors 'self'");
+                var isScalar = ctx.Request.Path.StartsWithSegments("/scalar");
+                var csp = isScalar
+                    ? "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
+                      "font-src 'self' data: https://fonts.scalar.com; img-src 'self' data: blob:; worker-src 'self' blob:; " +
+                      "connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+                    : "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+                      "img-src 'self' data: blob:; frame-src 'self' blob:; connect-src 'self'; " +
+                      "object-src 'none'; base-uri 'self'; frame-ancestors 'self'";
+                h.TryAdd("Content-Security-Policy", csp);
                 return Task.CompletedTask;
             });
             await next();

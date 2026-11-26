@@ -123,6 +123,21 @@ public class EndpointExportAndTelemetryTests
             var metricsBody = await metricsRes.Content.ReadAsStringAsync();
             Assert.Contains("specagent_audits_started_total 1", metricsBody);
             Assert.Contains("specagent_audits_completed_total 1", metricsBody);
+
+            // 7. OpenAPI spec + Scalar interactive docs endpoints are live.
+            var openApiRes = await client.GetAsync("/openapi/v1.json");
+            Assert.Equal(HttpStatusCode.OK, openApiRes.StatusCode);
+            var openApiJson = await openApiRes.Content.ReadAsStringAsync();
+            Assert.Contains("SpecAgent API", openApiJson);
+            Assert.Contains("/api/audits", openApiJson);
+            Assert.Contains("/api/settings", openApiJson);
+            Assert.Contains("/api/knowledge", openApiJson);
+            Assert.Contains("/api/admin/audit-log", openApiJson);
+
+            var scalarRes = await client.GetAsync("/scalar/v1");
+            Assert.Equal(HttpStatusCode.OK, scalarRes.StatusCode);
+            var scalarHtml = await scalarRes.Content.ReadAsStringAsync();
+            Assert.Contains("SpecAgent API", scalarHtml);
         }
         finally
         {

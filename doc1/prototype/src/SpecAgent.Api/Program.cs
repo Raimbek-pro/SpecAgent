@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using Scalar.AspNetCore;
 using SpecAgent.Agents;
 using SpecAgent.Agents.Agents;
 using SpecAgent.Agents.Knowledge;
@@ -63,6 +64,16 @@ builder.Services.AddSpecAgentIngestion();
 builder.Services.AddSpecAgents(builder.Configuration, builder.Environment.ContentRootPath);
 builder.Services.AddSpecAgentAuth(builder.Configuration);
 builder.Services.AddSpecAgentSecurity(builder.Configuration);
+builder.Services.AddOpenApi("v1", options =>
+{
+    options.AddDocumentTransformer((doc, _, _) =>
+    {
+        doc.Info.Title = "SpecAgent API";
+        doc.Info.Version = "v1";
+        doc.Info.Description = "Multi-Agent FinTech Requirements Auditor & Auto-Fixer API (ISO 29148, PCI DSS, NBK/ARRFR, Qdrant RAG, PostgreSQL Event Sourcing).";
+        return Task.CompletedTask;
+    });
+});
 var maxUploadBytes = builder.Configuration.GetValue<long?>("Security:MaxUploadBytes") ?? (25L * 1024 * 1024);
 builder.WebHost.ConfigureKestrel(k => k.Limits.MaxRequestBodySize = maxUploadBytes + (1024 * 1024));
 builder.Services.Configure<FormOptions>(f => f.MultipartBodyLengthLimit = maxUploadBytes + (1024 * 1024));
@@ -94,10 +105,19 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
+app.MapOpenApi().AllowAnonymous();
+app.MapScalarApiReference(o =>
+{
+    o.Title = "SpecAgent API — FinTech Requirements Auditor";
+    o.Theme = ScalarTheme.DeepSpace;
+}).AllowAnonymous();
+
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
+    .WithTags("Ops").WithSummary("Service health check").AllowAnonymous();
 
 app.MapGet("/metrics", (SpecAgentMetrics metrics) =>
-    Results.Text(metrics.RenderPrometheus(), "text/plain; version=0.0.4; charset=utf-8")).AllowAnonymous();
+    Results.Text(metrics.RenderPrometheus(), "text/plain; version=0.0.4; charset=utf-8"))
+    .WithTags("Ops").WithSummary("Prometheus metrics exposition").AllowAnonymous();
 
 app.MapGet("/api/me", (ClaimsPrincipal user, AuthOptions authOpts) =>
 {
@@ -111,9 +131,9 @@ app.MapGet("/api/me", (ClaimsPrincipal user, AuthOptions authOpts) =>
         role = current.Role,
         isAdmin = current.IsAdmin,
     });
-}).RequireAuthorization(AuthPolicies.AnalystOrAdmin);
+}).WithTags("Auth").WithSummary("Current authenticated user & role").RequireAuthorization(AuthPolicies.AnalystOrAdmin);
 
-var api = app.MapGroup("/api/audits").RequireAuthorization(AuthPolicies.AnalystOrAdmin);
+var api = app.MapGroup("/api/audits").WithTags("Audits").RequireAuthorization(AuthPolicies.AnalystOrAdmin);
 
 // 0. List recent saved sessions (from Postgres) with document names, scores & token/cost telemetry.
 api.MapGet("/recent", async (IServiceProvider sp, CancellationToken ct) =>
@@ -453,7 +473,7 @@ app.MapGet("/api/settings", (IOptions<PatchOptions> patchOpts, IOptions<ModelRou
             kinds = PiiMasker.AllKinds.ToDictionary(k => k, k => masker.EnabledKinds.Contains(k)),
         },
     });
-}).RequireAuthorization(AuthPolicies.AnalystOrAdmin);
+}).WithTags("Settings").WithSummary("Get runtime patch, model & PII settings").RequireAuthorization(AuthPolicies.AnalystOrAdmin);
 
 static PersistedSystemSettings ToPersistedSettings(PatchOptions p, ModelRoutingOptions m, PiiMasker masker) => new(
     new PersistedPatchSettings(p.MinSeverity.ToString(), p.MaxPatches, p.MaxRounds, p.Parallelism, p.IncludeGherkinInFixed),
@@ -542,7 +562,7 @@ app.MapPut("/api/settings", async (ClaimsPrincipal user, AuthOptions authOpts, S
         new { before, after }, ct);
 
     return Results.Ok(new { status = "saved" });
-}).RequireAuthorization(AuthPolicies.AdminOnly);
+}).WithTags("Settings").WithSummary("Update & persist runtime settings (AdminOnly)").RequireAuthorization(AuthPolicies.AdminOnly);
 
 // 11. RAG Knowledge Base reference documents (list / upload / delete) — Admin-only mutation.
 var builtInKbFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -578,7 +598,7 @@ app.MapGet("/api/knowledge", (IKnowledgeBase kb, IConfiguration config, IWebHost
         })
         .ToList();
     return Results.Ok(files);
-}).RequireAuthorization(AuthPolicies.AnalystOrAdmin);
+}).WithTags("Knowledge").WithSummary("List RAG knowledge base documents").RequireAuthorization(AuthPolicies.AnalystOrAdmin);
 
 app.MapPost("/api/knowledge", async (ClaimsPrincipal user, AuthOptions authOpts, IFormFile file,
     SecurityOptions secOpts, DocumentParserRegistry parsers, IKnowledgeBase kb, IAdminAuditLog auditLog,
@@ -631,7 +651,7 @@ app.MapPost("/api/knowledge", async (ClaimsPrincipal user, AuthOptions authOpts,
         new { originalFileName = file.FileName, savedFileName = savedName, sizeBytes }, ct);
 
     return Results.Ok(new { name = savedName, sizeBytes });
-}).DisableAntiforgery().RequireAuthorization(AuthPolicies.AdminOnly);
+}).DisableAntiforgery().WithTags("Knowledge").WithSummary("Upload document to RAG knowledge base (AdminOnly)").RequireAuthorization(AuthPolicies.AdminOnly);
 
 app.MapDelete("/api/knowledge/{name}", async (ClaimsPrincipal user, AuthOptions authOpts, string name,
     IKnowledgeBase kb, IAdminAuditLog auditLog, IConfiguration config, IWebHostEnvironment env, CancellationToken ct) =>
@@ -658,14 +678,14 @@ app.MapDelete("/api/knowledge/{name}", async (ClaimsPrincipal user, AuthOptions 
         new { deleted = safe }, ct);
 
     return Results.Ok(new { deleted = safe });
-}).RequireAuthorization(AuthPolicies.AdminOnly);
+}).WithTags("Knowledge").WithSummary("Delete document from RAG knowledge base (AdminOnly)").RequireAuthorization(AuthPolicies.AdminOnly);
 
 // 12. Admin Audit Trail (read-only, AdminOnly).
 app.MapGet("/api/admin/audit-log", async (int? limit, IAdminAuditLog auditLog, CancellationToken ct) =>
 {
     var entries = await auditLog.ListRecentAsync(limit ?? 50, ct);
     return Results.Ok(entries);
-}).RequireAuthorization(AuthPolicies.AdminOnly);
+}).WithTags("Admin").WithSummary("Inspect admin audit trail (AdminOnly)").RequireAuthorization(AuthPolicies.AdminOnly);
 
 app.Run();
 return 0;

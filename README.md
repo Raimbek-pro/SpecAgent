@@ -84,6 +84,7 @@ docker compose up --build -d
 
 Services started:
 - **SpecAgent Web UI & API:** http://localhost:5199
+- **Interactive API Docs (Scalar):** http://localhost:5199/scalar/v1 (OpenAPI JSON: `/openapi/v1.json`)
 - **Health check:** http://localhost:5199/health
 - **Qdrant Dashboard:** http://localhost:6333/dashboard
 - **PostgreSQL:** `localhost:5432` (`specagent` / `specagent`)
