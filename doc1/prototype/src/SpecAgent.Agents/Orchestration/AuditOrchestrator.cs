@@ -25,7 +25,8 @@ public sealed class AuditOrchestrator(
     IOptions<PatchOptions> patchOptions,
     ILogger<AuditOrchestrator> logger,
     ChecklistAgent? checklist = null,
-    SpecAgentMetrics? metrics = null)
+    SpecAgentMetrics? metrics = null,
+    AuditSessionRegistry? sessionRegistry = null)
 {
     public const string Name = "orchestrator";
 
@@ -33,7 +34,7 @@ public sealed class AuditOrchestrator(
     {
         using var telemetryScope = AuditTelemetryContext.BeginSession(sessionId);
         var state = AuditState.From(await events.ReadAsync(sessionId, ct: ct));
-        if (state.Finished) return;
+        if (state.Finished || state.Cancelled) return;
         var doc = state.Document ?? throw new InvalidOperationException($"Session {sessionId} has no TZ_INGESTED event");
 
         if (state.Started)
@@ -114,7 +115,20 @@ public sealed class AuditOrchestrator(
                 $"report ready: score {report.QualityScore}, {report.Findings.Count} findings", report, ct);
             metrics?.RecordAuditCompleted();
         }
-        catch (OperationCanceledException) { throw; } // worker shutdown → session stays open → resumed later
+        catch (OperationCanceledException)
+        {
+            if (sessionRegistry?.IsUserCancelled(sessionId) == true)
+            {
+                var latest = AuditState.From(await events.ReadAsync(sessionId, ct: CancellationToken.None));
+                if (!latest.Cancelled && !latest.Finished)
+                {
+                    await events.AppendAsync(sessionId, EventTypes.RunCancelled, Name, "cancelled by user", ct: CancellationToken.None);
+                    metrics?.RecordAuditCancelled();
+                }
+                return;
+            }
+            throw; // worker shutdown / crash → session stays open → resumed later
+        }
         catch (Exception ex)
         {
             metrics?.RecordAuditFailed();

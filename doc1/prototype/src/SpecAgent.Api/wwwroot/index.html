@@ -1207,6 +1207,7 @@ const eventLabels = {
   PATCHES: 'Правки готовы',
   REPORT_READY: 'Отчёт готов',
   RUN_FAILED: 'Ошибка аудита',
+  RUN_CANCELLED: 'Аудит отменён',
   CRITIC_FAILED: 'Сбой агента',
 };
 
@@ -1247,12 +1248,32 @@ function renderRightPane() {
   rsw.style.display = 'none';
   rfn.style.display = 'inline-flex';
 
-  // While running → show clear 5-stage visual pipeline + collapsible raw log!
+  // While running → show clear 5-stage visual pipeline + cancel button + collapsible raw log!
   if (t.running && !t.report) {
     rfn.textContent = `${baseName} — аудит выполняется…`;
     $('#right-crumb').textContent = `Агенты работают в реальном времени (${t.trace.length} событий)`;
     $('#right-meta').textContent = '';
-    out.innerHTML = renderStagesView(t, traceHtml);
+    const cancelBar = t.sessionId
+      ? `<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button type="button" class="btn" id="btn-cancel-session" style="color:var(--critical);border-color:var(--critical)">■ Отменить аудит</button></div>`
+      : '';
+    out.innerHTML = cancelBar + renderStagesView(t, traceHtml);
+    const cancelBtn = $('#btn-cancel-session');
+    if (cancelBtn) cancelBtn.onclick = () => cancelSessionOnTab(t, cancelBtn);
+    return;
+  }
+
+  if (t.cancelled && !t.report) {
+    rfn.textContent = `${baseName} — аудит отменён`;
+    $('#right-crumb').textContent = `Сессия ${t.sessionId} остановлена пользователем`;
+    $('#right-meta').textContent = '';
+    out.innerHTML = `<div class="score-strip" style="margin-bottom:14px">
+      <div class="score-strip-head">
+        <div><b>Аудит отменён</b><div class="score-strip-meta">Сессия ${esc(t.sessionId)} остановлена. Выполненные этапы сохранены в журнале.</div></div>
+        <button type="button" class="btn primary" id="btn-resume-session">▶ Продолжить</button>
+      </div>
+    </div>` + renderStagesView(t, traceHtml);
+    const resumeBtn = $('#btn-resume-session');
+    if (resumeBtn) resumeBtn.onclick = () => resumeSessionOnTab(t, resumeBtn);
     return;
   }
 
@@ -1583,8 +1604,50 @@ async function startAuditOnTab(t) {
     const dt = ((Date.now() - started) / 1000).toFixed(1);
     t.trace.push({ dt, agent: e.agent, type: e.type, message: e.message });
     if (activeTabId === t.id) { $('#sb-stage').textContent = `${e.agent} · ${e.type} (+${dt}s)`; renderRightPane(); }
-    if (e.type === 'REPORT_READY' || e.type === 'RUN_FAILED') {
-      es.close(); t.running = false;
+    if (e.type === 'REPORT_READY' || e.type === 'RUN_FAILED' || e.type === 'RUN_CANCELLED') {
+      es.close(); t.running = false; t.cancelled = e.type === 'RUN_CANCELLED';
+      fetchTabReport(t).then(() => { if (activeTabId === t.id) renderActiveTab(); refreshSessionDropdown(); });
+    }
+  });
+}
+
+async function cancelSessionOnTab(t, btn) {
+  if (!t.sessionId) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Отменяю…'; }
+  try {
+    const r = await fetch(`/api/audits/${t.sessionId}/cancel`, { method: 'POST' });
+    if (r.ok) {
+      t.running = false;
+      t.cancelled = true;
+      if (activeTabId === t.id) renderActiveTab();
+      refreshSessionDropdown();
+    } else if (btn) {
+      btn.disabled = false; btn.textContent = '■ Отменить аудит';
+    }
+  } catch {
+    if (btn) { btn.disabled = false; btn.textContent = '■ Отменить аудит'; }
+  }
+}
+
+async function resumeSessionOnTab(t, btn) {
+  if (!t.sessionId) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Запускаю…'; }
+  const r = await fetch(`/api/audits/${t.sessionId}/resume`, { method: 'POST' });
+  if (!r.ok) { if (btn) { btn.disabled = false; btn.textContent = '▶ Продолжить'; } return; }
+  t.cancelled = false;
+  t.running = true;
+  if (activeTabId === t.id) renderActiveTab();
+  refreshSessionDropdown();
+  const es = new EventSource(`/api/audits/${t.sessionId}/events`);
+  let firstAt = null;
+  es.addEventListener('audit', ev => {
+    const e = JSON.parse(ev.data);
+    if (!firstAt) firstAt = new Date(e.at).getTime();
+    const dt = ((new Date(e.at).getTime() - firstAt) / 1000).toFixed(1);
+    if (!t.trace.some(x => x.seq === e.seq)) t.trace.push({ seq: e.seq, dt, agent: e.agent, type: e.type, message: e.message });
+    if (activeTabId === t.id) renderRightPane();
+    if (e.type === 'REPORT_READY' || e.type === 'RUN_FAILED' || e.type === 'RUN_CANCELLED') {
+      es.close(); t.running = false; t.cancelled = e.type === 'RUN_CANCELLED';
       fetchTabReport(t).then(() => { if (activeTabId === t.id) renderActiveTab(); refreshSessionDropdown(); });
     }
   });
@@ -1592,8 +1655,12 @@ async function startAuditOnTab(t) {
 
 async function fetchTabReport(t) {
   const j = await (await fetch(`/api/audits/${t.sessionId}`)).json();
-  if (j.status !== 'done') { t.running = j.status === 'running'; return false; }
-  t.running = false; t.report = j.report;
+  if (j.status !== 'done') {
+    t.running = j.status === 'running';
+    t.cancelled = j.status === 'cancelled';
+    return false;
+  }
+  t.running = false; t.cancelled = false; t.report = j.report;
   t.reportMd = await (await fetch(`/api/audits/${t.sessionId}/export/report.md`)).text();
   return true;
 }
@@ -1624,9 +1691,9 @@ async function openSessionInTab(sessionId, rightFile = 'fixed') {
     const dt = ((new Date(e.at).getTime() - firstAt) / 1000).toFixed(1);
     t.trace.push({ dt, agent: e.agent, type: e.type, message: e.message });
     if (activeTabId === t.id && (t.running || t.rightFile === 'log')) renderRightPane();
-    if (e.type === 'REPORT_READY' || e.type === 'RUN_FAILED') {
-      es.close(); t.running = false;
-      fetchTabReport(t).then(() => { if (activeTabId === t.id) renderActiveTab(); });
+    if (e.type === 'REPORT_READY' || e.type === 'RUN_FAILED' || e.type === 'RUN_CANCELLED') {
+      es.close(); t.running = false; t.cancelled = e.type === 'RUN_CANCELLED';
+      fetchTabReport(t).then(() => { if (activeTabId === t.id) renderActiveTab(); refreshSessionDropdown(); });
     }
   });
 }

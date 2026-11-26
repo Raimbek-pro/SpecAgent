@@ -168,6 +168,8 @@ dotnet test --nologo
 | `GET` | `/api/audits/{id}/events` | Live Server-Sent Events (SSE) execution trace |
 | `GET` | `/api/audits/{id}/document` | Demasked parsed document sections |
 | `GET` | `/api/audits/{id}` | Final audit report JSON (`findings`, `patches`, `qualityScore`) |
+| `POST` | `/api/audits/{id}/cancel` | Cancel an active, queued, or stuck audit session (`RUN_CANCELLED`) |
+| `POST` | `/api/audits/{id}/resume` | Resume a failed or cancelled audit session from its last saved step |
 | `POST` | `/api/audits/{id}/ask` | Human-in-the-loop `@agent` Q&A on a specific section |
 | `GET` | `/api/audits/{id}/export/report.md` | Download official Markdown audit report |
 | `GET` | `/api/audits/{id}/export/fixed.md` | Download clean patched Markdown specification |

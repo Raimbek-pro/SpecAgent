@@ -189,6 +189,7 @@ public sealed class SpecAgentMetrics : IDisposable
     private readonly Counter<long> _auditsStartedCounter;
     private readonly Counter<long> _auditsCompletedCounter;
     private readonly Counter<long> _auditsFailedCounter;
+    private readonly Counter<long> _auditsCancelledCounter;
     private readonly Counter<long> _llmCallsCounter;
     private readonly Counter<long> _llmInputTokensCounter;
     private readonly Counter<long> _llmOutputTokensCounter;
@@ -197,6 +198,7 @@ public sealed class SpecAgentMetrics : IDisposable
     private long _auditsStarted;
     private long _auditsCompleted;
     private long _auditsFailed;
+    private long _auditsCancelled;
     private readonly ConcurrentDictionary<(string Agent, string Model, string Status), long> _llmCalls = new();
     private readonly ConcurrentDictionary<(string Agent, string Model), long> _inputTokens = new();
     private readonly ConcurrentDictionary<(string Agent, string Model), long> _outputTokens = new();
@@ -208,6 +210,7 @@ public sealed class SpecAgentMetrics : IDisposable
         _auditsStartedCounter = _meter.CreateCounter<long>("specagent.audits.started");
         _auditsCompletedCounter = _meter.CreateCounter<long>("specagent.audits.completed");
         _auditsFailedCounter = _meter.CreateCounter<long>("specagent.audits.failed");
+        _auditsCancelledCounter = _meter.CreateCounter<long>("specagent.audits.cancelled");
         _llmCallsCounter = _meter.CreateCounter<long>("specagent.llm.calls");
         _llmInputTokensCounter = _meter.CreateCounter<long>("specagent.llm.tokens.input");
         _llmOutputTokensCounter = _meter.CreateCounter<long>("specagent.llm.tokens.output");
@@ -230,6 +233,12 @@ public sealed class SpecAgentMetrics : IDisposable
     {
         Interlocked.Increment(ref _auditsFailed);
         _auditsFailedCounter.Add(1);
+    }
+
+    public void RecordAuditCancelled()
+    {
+        Interlocked.Increment(ref _auditsCancelled);
+        _auditsCancelledCounter.Add(1);
     }
 
     public void RecordLlmCall(string agent, string model, bool success, long inputTokens, long outputTokens, decimal costUsd, int durationMs)
@@ -284,6 +293,10 @@ public sealed class SpecAgentMetrics : IDisposable
         sb.AppendLine("# HELP specagent_audits_failed_total Total number of audit runs failed.");
         sb.AppendLine("# TYPE specagent_audits_failed_total counter");
         sb.AppendLine($"specagent_audits_failed_total {Interlocked.Read(ref _auditsFailed)}");
+
+        sb.AppendLine("# HELP specagent_audits_cancelled_total Total number of audit runs cancelled by users.");
+        sb.AppendLine("# TYPE specagent_audits_cancelled_total counter");
+        sb.AppendLine($"specagent_audits_cancelled_total {Interlocked.Read(ref _auditsCancelled)}");
 
         sb.AppendLine("# HELP specagent_llm_calls_total Total number of LLM API calls.");
         sb.AppendLine("# TYPE specagent_llm_calls_total counter");

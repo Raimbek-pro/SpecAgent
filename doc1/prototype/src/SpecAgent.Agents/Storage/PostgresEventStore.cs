@@ -30,11 +30,16 @@ public sealed class PostgresEventStore(NpgsqlDataSource db) : IEventStore
             CREATE TABLE IF NOT EXISTS audit_sessions (
                 session_id text        PRIMARY KEY,
                 status     text        NOT NULL DEFAULT 'open'
-                                       CHECK (status IN ('open', 'running', 'completed', 'failed')),
+                                       CHECK (status IN ('open', 'running', 'completed', 'failed', 'cancelled')),
                 last_seq   bigint      NOT NULL DEFAULT 0,
                 created_at timestamptz NOT NULL DEFAULT now(),
                 updated_at timestamptz NOT NULL DEFAULT now()
             );
+
+            ALTER TABLE audit_sessions DROP CONSTRAINT IF EXISTS audit_sessions_status_check;
+            ALTER TABLE audit_sessions
+                ADD CONSTRAINT audit_sessions_status_check
+                CHECK (status IN ('open', 'running', 'completed', 'failed', 'cancelled'));
 
             CREATE TABLE IF NOT EXISTS audit_events (
                 session_id text        NOT NULL REFERENCES audit_sessions(session_id) ON DELETE CASCADE,
@@ -58,7 +63,7 @@ public sealed class PostgresEventStore(NpgsqlDataSource db) : IEventStore
                 ON audit_events (at DESC);
 
             INSERT INTO schema_migrations (version)
-            VALUES ('001_init_audit_store')
+            VALUES ('001_init_audit_store'), ('005_session_cancel_status')
             ON CONFLICT (version) DO NOTHING;
             """, conn, tx))
             await cmd.ExecuteNonQueryAsync(ct);
@@ -157,6 +162,7 @@ public sealed class PostgresEventStore(NpgsqlDataSource db) : IEventStore
         EventTypes.RunStarted or EventTypes.Resumed => "running",
         EventTypes.ReportReady => "completed",
         EventTypes.RunFailed => "failed",
+        EventTypes.RunCancelled => "cancelled",
         _ => null,
     };
 }

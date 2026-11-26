@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -14,10 +15,65 @@ public sealed class AuditQueue
 }
 
 /// <summary>
+/// Tracks per-session CancellationTokenSources so a user can cancel a single running audit
+/// without affecting other concurrent sessions or host graceful shutdown (Crash &amp; Resume).
+/// </summary>
+public sealed class AuditSessionRegistry
+{
+    private readonly ConcurrentDictionary<string, CancellationTokenSource> _active = new(StringComparer.OrdinalIgnoreCase);
+
+    public sealed class SessionLease(
+        string sessionId,
+        CancellationToken token,
+        CancellationTokenSource userCts,
+        CancellationTokenSource linkedCts,
+        AuditSessionRegistry owner) : IDisposable
+    {
+        public CancellationToken Token { get; } = token;
+
+        public void Dispose()
+        {
+            owner.Release(sessionId, userCts);
+            linkedCts.Dispose();
+            userCts.Dispose();
+        }
+    }
+
+    public SessionLease Begin(string sessionId, CancellationToken hostStoppingToken)
+    {
+        var userCts = new CancellationTokenSource();
+        var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(hostStoppingToken, userCts.Token);
+        _active[sessionId] = userCts;
+        return new SessionLease(sessionId, linkedCts.Token, userCts, linkedCts, this);
+    }
+
+    /// <summary>Requests cancellation for an active session. Returns true if the session was actively executing.</summary>
+    public bool TryCancel(string sessionId)
+    {
+        if (!_active.TryGetValue(sessionId, out var cts)) return false;
+        try { cts.Cancel(); } catch (ObjectDisposedException) { }
+        return true;
+    }
+
+    public bool IsUserCancelled(string sessionId) =>
+        _active.TryGetValue(sessionId, out var cts) && cts.IsCancellationRequested;
+
+    public bool IsActive(string sessionId) => _active.ContainsKey(sessionId);
+
+    private void Release(string sessionId, CancellationTokenSource expected) =>
+        _active.TryRemove(new KeyValuePair<string, CancellationTokenSource>(sessionId, expected));
+}
+
+/// <summary>
 /// Runs audits in the background. On startup it wakes every session that has no terminal event —
 /// so killing the container mid-audit loses nothing (with a durable event store).
 /// </summary>
-public sealed class AuditWorker(AuditQueue queue, IEventStore events, IServiceScopeFactory scopes, ILogger<AuditWorker> logger)
+public sealed class AuditWorker(
+    AuditQueue queue,
+    AuditSessionRegistry registry,
+    IEventStore events,
+    IServiceScopeFactory scopes,
+    ILogger<AuditWorker> logger)
     : BackgroundService
 {
     private readonly SemaphoreSlim _gate = new(4);
@@ -37,8 +93,13 @@ public sealed class AuditWorker(AuditQueue queue, IEventStore events, IServiceSc
             {
                 try
                 {
+                    using var lease = registry.Begin(sessionId, stoppingToken);
                     using var scope = scopes.CreateScope();
-                    await scope.ServiceProvider.GetRequiredService<AuditOrchestrator>().RunAsync(sessionId, stoppingToken);
+                    await scope.ServiceProvider.GetRequiredService<AuditOrchestrator>().RunAsync(sessionId, lease.Token);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    logger.LogInformation("Host stopping — session {Session} left open for resume", sessionId);
                 }
                 catch (Exception ex) { logger.LogError(ex, "Worker crashed on {Session}", sessionId); }
                 finally { _gate.Release(); }

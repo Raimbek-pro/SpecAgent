@@ -230,13 +230,18 @@ api.MapGet("/{id}/events", async (string id, IEventStore events, HttpContext htt
     while (!ct.IsCancellationRequested)
     {
         var batch = await events.ReadAsync(id, after, ct);
-        foreach (var e in batch)
+        for (int i = 0; i < batch.Count; i++)
         {
+            var e = batch[i];
             // Payloads can be large (whole document); the trace only needs the headline.
             var dto = new { e.Seq, e.Type, e.Agent, e.At, e.Message };
             await http.Response.WriteAsync($"id: {e.Seq}\nevent: audit\ndata: {JsonSerializer.Serialize(dto, EventJson.Options)}\n\n", ct);
             after = e.Seq;
-            if (EventTypes.Terminal.Contains(e.Type)) { await http.Response.Body.FlushAsync(ct); return; }
+            if (EventTypes.Terminal.Contains(e.Type) && i == batch.Count - 1)
+            {
+                await http.Response.Body.FlushAsync(ct);
+                return;
+            }
         }
         await http.Response.Body.FlushAsync(ct);
         await Task.Delay(300, ct);
@@ -259,9 +264,13 @@ api.MapGet("/{id}", async (string id, IEventStore events, PiiMasker masker, Canc
 {
     var log = await events.ReadAsync(id, ct: ct);
     if (log.Count == 0) return Results.NotFound();
+    var state = AuditState.From(log);
     var ready = log.LastOrDefault(e => e.Type == EventTypes.ReportReady);
     if (ready is null)
-        return Results.Ok(new { status = log.Any(e => e.Type == EventTypes.RunFailed) ? "failed" : "running", events = log.Count });
+    {
+        var status = state.Cancelled ? "cancelled" : state.Failed ? "failed" : "running";
+        return Results.Ok(new { status, events = log.Count });
+    }
 
     var report = ready.Get<AuditReport>();
     string D(string s) => masker.Demask(id, s);
@@ -301,12 +310,42 @@ api.MapPost("/{id}/ask", async (string id, AskRequest req, AuditOrchestrator orc
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
 }).RequireRateLimiting(RateLimitPolicies.AgentAsk);
 
-// 7. Manual wake(): re-enqueue a session (e.g. after RUN_FAILED caused by an outage).
-api.MapPost("/{id}/resume", async (string id, AuditQueue queue) =>
+// 7. Manual wake(): re-enqueue a failed or cancelled session to continue from the last completed step.
+api.MapPost("/{id}/resume", async (string id, IEventStore events, AuditQueue queue, CancellationToken ct) =>
 {
+    var log = await events.ReadAsync(id, ct: ct);
+    if (log.Count == 0) return Results.NotFound(new { error = $"Сессия '{id}' не найдена." });
+    var state = AuditState.From(log);
+    if (state.Finished)
+        return Results.Conflict(new { error = "Аудит уже завершён." });
+    if (state.Cancelled || state.Failed)
+        await events.AppendAsync(id, EventTypes.Resumed, AuditOrchestrator.Name, $"manual resume({id}) from event {state.LastSeq}", ct: ct);
+
     await queue.EnqueueAsync(id);
-    return Results.Accepted();
-});
+    return Results.Accepted($"/api/audits/{id}", new { sessionId = id, status = "running" });
+}).WithSummary("Resume a failed or cancelled audit session");
+
+// 7b. Cancel a running, queued, or stuck audit session without affecting other sessions.
+api.MapPost("/{id}/cancel", async (string id, ClaimsPrincipal user, AuthOptions authOpts,
+    IEventStore events, AuditSessionRegistry registry, SpecAgentMetrics metrics, CancellationToken ct) =>
+{
+    var log = await events.ReadAsync(id, ct: ct);
+    if (log.Count == 0) return Results.NotFound(new { error = $"Сессия '{id}' не найдена." });
+
+    var state = AuditState.From(log);
+    if (state.Finished)
+        return Results.Conflict(new { error = "Аудит уже завершён и не может быть отменён." });
+    if (state.Cancelled)
+        return Results.Ok(new { sessionId = id, status = "cancelled", alreadyCancelled = true, wasActive = false });
+
+    var wasActive = registry.TryCancel(id);
+    var actor = CurrentUser.From(user, authOpts.EffectiveMode);
+    await events.AppendAsync(id, EventTypes.RunCancelled, AuditOrchestrator.Name,
+        $"cancelled by {actor.Sub}", new { actorSub = actor.Sub, wasActive }, ct);
+    metrics.RecordAuditCancelled();
+
+    return Results.Ok(new { sessionId = id, status = "cancelled", alreadyCancelled = false, wasActive });
+}).WithSummary("Cancel an active, queued, or stuck audit session");
 
 // 8. Export official BCC-HUB Markdown audit report (demasked).
 api.MapGet("/{id}/export/report.md", async (string id, IEventStore events, PiiMasker masker, IConfiguration config, CancellationToken ct) =>

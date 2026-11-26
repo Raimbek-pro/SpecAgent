@@ -18,9 +18,10 @@ public sealed class AuditState
 {
     public TzDocument? Document { get; private set; }
     public bool Started { get; private set; }
-    /// <summary>REPORT_READY seen. RUN_FAILED is not "finished": a manual resume may retry it.</summary>
+    /// <summary>REPORT_READY seen. RUN_FAILED / RUN_CANCELLED are not "finished": a manual resume may retry them.</summary>
     public bool Finished { get; private set; }
     public bool Failed { get; private set; }
+    public bool Cancelled { get; private set; }
     public RoutingDecision? Routing { get; private set; }
     public Dictionary<string, IReadOnlyList<RawFinding>> CriticFindings { get; } = new(StringComparer.OrdinalIgnoreCase);
     public HashSet<string> FailedCritics { get; } = new(StringComparer.OrdinalIgnoreCase);
@@ -47,9 +48,10 @@ public sealed class AuditState
                 case EventTypes.CriticFailed: s.FailedCritics.Add(e.Agent); break;
                 case EventTypes.Judged: s.Judged = e.Get<JudgeResult>(); break;
                 case EventTypes.Patches: s.Patches = e.Get<PatchesPayload>().Patches; break;
-                case EventTypes.ReportReady: s.Finished = true; break;
-                case EventTypes.RunFailed: s.Failed = true; break;
-                case EventTypes.Resumed: s.Failed = false; break;
+                case EventTypes.ReportReady: s.Finished = true; s.Cancelled = false; s.Failed = false; break;
+                case EventTypes.RunFailed: s.Failed = true; s.Cancelled = false; break;
+                case EventTypes.RunCancelled: s.Cancelled = true; s.Failed = false; break;
+                case EventTypes.Resumed: s.Failed = false; s.Cancelled = false; break;
             }
         }
         return s;

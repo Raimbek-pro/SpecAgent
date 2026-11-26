@@ -86,6 +86,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<PatchLoop>();
         services.AddScoped<AuditOrchestrator>();
         services.AddSingleton<AuditQueue>();
+        services.AddSingleton<AuditSessionRegistry>();
         services.AddHostedService<AuditWorker>();
         return services;
     }

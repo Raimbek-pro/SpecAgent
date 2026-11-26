@@ -33,8 +33,9 @@ public static class EventTypes
     public const string Patches = "PATCHES";
     public const string ReportReady = "REPORT_READY";
     public const string RunFailed = "RUN_FAILED";
+    public const string RunCancelled = "RUN_CANCELLED";
     public const string HumanQuestion = "HUMAN_QUESTION";
     public const string AgentAnswer = "AGENT_ANSWER";
 
-    public static readonly IReadOnlySet<string> Terminal = new HashSet<string> { ReportReady, RunFailed };
+    public static readonly IReadOnlySet<string> Terminal = new HashSet<string> { ReportReady, RunFailed, RunCancelled };
 }
