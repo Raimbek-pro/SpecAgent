@@ -773,9 +773,15 @@ mark.on { background: #fff0f0; border-radius: 3px; }
             <span class="set-hint" id="h-parallel">Сколько разделов исправляется одновременно в параллельных потоках. Выше — быстрее аудит, но зависит от лимитов API (для Kimi Tier 1 оптимально 6).</span>
           </div>
           <div class="set-field">
-            <label class="pii-chk" style="font-weight:600">
-              <input type="checkbox" id="set-gherkin-in-fixed" class="admin-ctrl">
-              Включать сценарии Gherkin (Given / When / Then) в итоговый файл <button type="button" class="info-ico" data-hint="h-gherkin" title="Показать пояснение">i</button>
+            <label class="pii-master" style="margin-bottom:0;cursor:pointer">
+              <div>
+                <div class="pii-master-title" style="display:inline-flex;align-items:center;gap:6px">
+                  Включать сценарии Gherkin (Given / When / Then) в итоговый файл
+                  <button type="button" class="info-ico" data-hint="h-gherkin" title="Показать пояснение">i</button>
+                </div>
+                <div class="pii-master-sub">Добавлять BDD-тесты прямо в скачиваемый fixed.pdf / .docx / .md</div>
+              </div>
+              <span class="sw"><input type="checkbox" id="set-gherkin-in-fixed" class="admin-ctrl"><span class="sw-track"></span></span>
             </label>
             <span class="set-hint" id="h-gherkin">Если выключено (по умолчанию) — в скачиваемый <code>fixed.pdf / .docx / .md</code> попадает только чистый текст ТЗ, а Gherkin остаётся под стрелкой разбора.</span>
           </div>
