@@ -534,10 +534,30 @@ input[type=file] { display: none; }
 .inline-details summary { font-weight: 600; cursor: pointer; color: var(--ink-2); }
 .inline-details pre { white-space: pre-wrap; margin: 6px 0 0; font: 11.5px/1.45 var(--mono); }
 
-.ask { display: flex; gap: 6px; margin-top: 8px; }
-.ask input { flex: 1; height: 26px; padding: 0 9px; border-radius: 5px; border: 1px solid var(--border); font: 12px var(--sans); outline: none; }
+.ask-box { margin-top: 8px; }
+.ask-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
+.ask-chip {
+  font: 11px/1 var(--mono); padding: 3px 7px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--panel); color: var(--ink-2);
+  cursor: pointer; transition: border-color .12s, color .12s, background .12s;
+}
+.ask-chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+.ask { display: flex; gap: 6px; }
+.ask input { flex: 1; height: 28px; padding: 0 9px; border-radius: 5px; border: 1px solid var(--border); background: var(--panel); color: var(--ink); font: 12px var(--sans); outline: none; }
 .ask input:focus { border-color: var(--accent); }
-.ask-reply { margin-top: 6px; padding: 7px 9px; border-radius: 5px; background: var(--accent-bg); font-size: 12px; }
+.ask input:disabled { opacity: .65; cursor: wait; }
+.ask button { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.ask button:disabled { opacity: .7; cursor: wait; }
+.ask-reply { margin-top: 6px; padding: 8px 10px; border-radius: 6px; background: var(--accent-bg); border: 1px solid var(--border-soft); font-size: 12px; line-height: 1.5; color: var(--ink); }
+.ask-reply.ask-loading { display: flex; align-items: center; gap: 8px; color: var(--ink-2); }
+.ask-reply.ask-error { background: var(--critical-bg); color: var(--critical); border-color: transparent; }
+.ask-reply .ask-q { font-size: 11.5px; color: var(--mute); margin-bottom: 4px; }
+.ask-spinner {
+  display: inline-block; width: 12px; height: 12px; flex-shrink: 0;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: ask-spin .7s linear infinite;
+}
+@keyframes ask-spin { to { transform: rotate(360deg); } }
 
 /* Score Summary Strip at top of fixed.md */
 .score-strip {
@@ -1343,7 +1363,15 @@ function renderRightPane() {
           ${f.recommendation ? `<p><b>Как нужно:</b> ${esc(f.recommendation)}</p>` : ''}
           ${f.rationale ? `<p><b>Обоснование арбитра:</b> ${esc(f.rationale)}</p>` : ''}
           <div class="explain-meta">✓ Цитата подтверждена в ${esc(f.sectionId)}${f.standardRef ? ' · ' + esc(f.standardRef) : ''} · агенты: ${f.agents.map(esc).join(', ')}</div>
-          <div class="ask"><input placeholder="@compliance спросить по разделу ${esc(s.id)}…" data-s="${esc(s.id)}"><button class="btn">Спросить</button></div>
+          <div class="ask-box">
+            <div class="ask-chips">
+              <button type="button" class="ask-chip" data-tag="@compliance">@compliance</button>
+              <button type="button" class="ask-chip" data-tag="@distributed">@distributed</button>
+              <button type="button" class="ask-chip" data-tag="@logic">@logic</button>
+              <button type="button" class="ask-chip" data-tag="@qa">@qa</button>
+            </div>
+            <div class="ask"><input placeholder="@compliance спросить по разделу ${esc(s.id)}…" data-s="${esc(s.id)}"><button type="button" class="btn">Спросить</button></div>
+          </div>
         </div>
       </div>`;
     }).join('');
@@ -1371,16 +1399,62 @@ function renderRightPane() {
     </div>`;
   }).join('');
 
-  out.querySelectorAll('.ask button').forEach(btn => btn.onclick = async () => {
-    const input = btn.previousElementSibling, m = input.value.match(/^@(\w+)\s+(.*)$/);
-    if (!m) { input.value = '@compliance ' + input.value; return; }
-    btn.disabled = true;
-    const r = await fetch(`/api/audits/${t.sessionId}/ask`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ agent: m[1], sectionId: input.dataset.s, question: m[2] })
-    });
-    const a = await r.json(); btn.disabled = false;
-    btn.parentElement.insertAdjacentHTML('afterend', `<div class="ask-reply"><b>@${esc(m[1])}:</b> ${esc(a.answer || a.error)}</div>`);
+  out.querySelectorAll('.ask-chip').forEach(chip => chip.onclick = () => {
+    const input = chip.closest('.ask-box').querySelector('.ask input');
+    const tag = chip.dataset.tag;
+    const stripped = input.value.replace(/^@\w+\s*/, '');
+    input.value = `${tag} ${stripped}`;
+    input.focus();
+  });
+
+  out.querySelectorAll('.ask').forEach(row => {
+    const input = row.querySelector('input');
+    const btn = row.querySelector('button');
+    const submitAsk = async () => {
+      const raw = input.value.trim();
+      if (!raw) { input.focus(); return; }
+      const m = raw.match(/^@(\w+)\s+(.+)$/s);
+      if (!m) {
+        input.value = '@compliance ' + raw.replace(/^@\w*\s*/, '');
+        input.focus();
+        return;
+      }
+      const agent = m[1], question = m[2].trim();
+      btn.disabled = true;
+      input.disabled = true;
+      btn.innerHTML = '<span class="ask-spinner"></span> Думает…';
+
+      const replyEl = document.createElement('div');
+      replyEl.className = 'ask-reply ask-loading';
+      replyEl.innerHTML = `<span class="ask-spinner"></span><span><b>@${esc(agent)}</b> анализирует раздел ${esc(input.dataset.s)} и базу знаний RAG…</span>`;
+      row.parentElement.appendChild(replyEl);
+
+      try {
+        const r = await fetch(`/api/audits/${t.sessionId}/ask`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ agent, sectionId: input.dataset.s, question })
+        });
+        const a = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+        if (!r.ok || a.error) {
+          replyEl.className = 'ask-reply ask-error';
+          replyEl.innerHTML = `<b>@${esc(agent)}:</b> ${esc(a.error || `Ошибка запроса (HTTP ${r.status})`)}`;
+        } else {
+          replyEl.className = 'ask-reply';
+          replyEl.innerHTML = `<div class="ask-q">Вы → <b>@${esc(agent)}</b>: ${esc(question)}</div><div class="md">${renderMarkdown(a.answer || '', [])}</div>`;
+          input.value = `@${agent} `;
+        }
+      } catch (err) {
+        replyEl.className = 'ask-reply ask-error';
+        replyEl.innerHTML = `<b>@${esc(agent)}:</b> Ошибка сети: ${esc(err?.message || 'не удалось получить ответ')}`;
+      } finally {
+        btn.disabled = false;
+        input.disabled = false;
+        btn.textContent = 'Спросить';
+      }
+    };
+    btn.onclick = submitAsk;
+    input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); submitAsk(); } };
   });
 }
 

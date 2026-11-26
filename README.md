@@ -51,6 +51,28 @@ Unlike single-prompt LLM wrappers, SpecAgent runs a **4-level deterministic + mu
 
 ---
 
+## Interactive Human-in-the-Loop (`@agent` Q&A)
+
+Every finding card in the right-hand audit pane includes an inline **Ask a Specialist** input box, allowing analysts and reviewers to interrogate any domain critic directly on a specific section of the specification:
+
+<p align="center">
+  <img src="assets/agent-qa-callout.png" alt="Interactive @agent Q&A inside a finding card" width="520" />
+</p>
+
+| Mention | Specialist Critic | Example Question |
+|---|---|---|
+| `@compliance` | Security, PCI DSS, NBK/ARRFR, PII, IDOR | `@compliance проверь этот эндпоинт на IDOR и PCI DSS` |
+| `@distributed` | Idempotency, timeouts, retries, Saga, races | `@distributed как защититься от двойного списания при таймауте?` |
+| `@logic` | State machines, API contracts, types, contradictions | `@logic есть ли противоречия со статусами в разделе 3?` |
+| `@qa` | Testability, Gherkin scenarios, SLA / NFR metrics | `@qa напиши негативные Given/When/Then сценарии для этого раздела` |
+
+**How it works under the hood (`POST /api/audits/{id}/ask`):**
+- **Full context awareness:** the chosen critic receives the exact section text, dynamically retrieved **Qdrant RAG** banking/ISO rules, confirmed findings for that section, and any generated patch.
+- **Zero PII leakage:** analyst questions are masked before reaching the LLM and answers are demasked on the way out.
+- **Full auditability:** both `HUMAN_QUESTION` and `AGENT_ANSWER` are appended to the session's PostgreSQL event log (also testable directly in **Scalar** at `/scalar/v1`).
+
+---
+
 ## Quick Start
 
 ### Prerequisites
