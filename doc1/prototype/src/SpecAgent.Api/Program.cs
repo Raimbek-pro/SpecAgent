@@ -9,6 +9,7 @@ using SpecAgent.Agents.Llm;
 using SpecAgent.Agents.Orchestration;
 using SpecAgent.Agents.Storage;
 using SpecAgent.Agents.Tools;
+using SpecAgent.Api.Cli;
 using SpecAgent.Api.Export;
 using SpecAgent.Core.Documents;
 using SpecAgent.Core.Events;
@@ -18,6 +19,39 @@ using SpecAgent.Ingestion.Parsing;
 using SpecAgent.Ingestion.Pii;
 
 LoadDotEnv();
+
+if (AuditCliRunner.IsCliMode(args))
+{
+    if (!AuditCliRunner.TryParseArgs(args, out var cliOptions, out var parseError, out var showHelp))
+    {
+        Console.Error.WriteLine($"Error: {parseError}");
+        Console.Error.WriteLine();
+        Console.Error.WriteLine(AuditCliRunner.UsageText);
+        return 2;
+    }
+    if (showHelp || cliOptions is null)
+    {
+        Console.WriteLine(AuditCliRunner.UsageText);
+        return 0;
+    }
+
+    var cliBuilder = WebApplication.CreateBuilder(new WebApplicationOptions
+    {
+        ContentRootPath = Directory.GetCurrentDirectory(),
+    });
+    // Ensure appsettings.json from the build output is loaded even when invoked from repo root.
+    cliBuilder.Configuration.AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.json"), optional: true);
+    cliBuilder.Configuration.AddEnvironmentVariables();
+
+    var resolvedKb = AuditCliRunner.ResolveKnowledgeDirectory(cliBuilder.Configuration, cliBuilder.Environment.ContentRootPath);
+    cliBuilder.Configuration["Knowledge:Path"] = resolvedKb;
+
+    cliBuilder.Services.AddSpecAgentIngestion();
+    cliBuilder.Services.AddSpecAgents(cliBuilder.Configuration, cliBuilder.Environment.ContentRootPath);
+
+    await using var cliApp = cliBuilder.Build();
+    return await AuditCliRunner.RunAsync(cliApp.Services, cliOptions, Console.Out, Console.Error);
+}
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSpecAgentIngestion();
@@ -471,6 +505,7 @@ app.MapDelete("/api/knowledge/{name}", async (HttpRequest req, string name, IKno
 });
 
 app.Run();
+return 0;
 
 static void LoadDotEnv()
 {

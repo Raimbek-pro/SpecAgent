@@ -41,6 +41,9 @@ services:
         condition: service_started
     ports:
       - "${API_PORT:-5199}:8080"
+    volumes:
+      - specagent_uploads:/app/uploads
+      - specagent_knowledge:/app/knowledge
     environment:
       ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
       EventStore: Postgres
@@ -56,3 +59,5 @@ services:
 volumes:
   pgdata:
   qdrant_data:
+  specagent_uploads:
+  specagent_knowledge:

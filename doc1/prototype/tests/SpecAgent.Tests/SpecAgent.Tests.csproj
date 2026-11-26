@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\SpecAgent.Core\SpecAgent.Core.csproj" />
     <ProjectReference Include="..\..\src\SpecAgent.Ingestion\SpecAgent.Ingestion.csproj" />
     <ProjectReference Include="..\..\src\SpecAgent.Agents\SpecAgent.Agents.csproj" />
+    <ProjectReference Include="..\..\src\SpecAgent.Api\SpecAgent.Api.csproj" />
   </ItemGroup>
 
 </Project>

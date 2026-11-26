@@ -26,19 +26,18 @@ The following endpoints and capabilities are live and verified (18/18 unit tests
 
 ## 2. Prioritized Backend TODOs
 
-### P0 — Hackathon Submission Must-Haves
+### P0 — Hackathon Submission Must-Haves (Done ✅)
 
-1. **Single-Command CLI Runner (BCC-HUB Requirement)**
-   - Add CLI mode to `SpecAgent.Api` (or a dedicated `SpecAgent.Cli` project) supporting:
+1. **✅ Single-Command CLI Runner (BCC-HUB Requirement)**
+   - Implemented in `SpecAgent.Api/Cli/AuditCliRunner.cs` and wired in `Program.cs`:
      ```bash
      dotnet run --project src/SpecAgent.Api -- --input <path/to/spec.pdf> --output <path/to/report.md>
      ```
-   - Reuse `DocumentParserRegistry` → `PiiMasker` → `AuditOrchestrator.RunAsync` → `ToolGateway.RenderReportMarkdown`, returning exit code `0` on completion and writing the demasked Markdown report to `--output`.
-   - Document the exact CLI command in root `README.md`.
+   - Reuses `DocumentParserRegistry` → `PiiMasker` → `AuditOrchestrator.RunAsync` → `ToolGateway.RenderReportMarkdown`, returns exit code `0` on completion, writes the demasked Markdown report to `--output`, and optionally exports `--fixed` (`.md`/`.pdf`/`.docx`).
+   - Documented in root `README.md` and covered by `CliRunnerTests`.
 
-2. **Persistent Volumes for `uploads/` and `knowledge/` in `docker-compose.yml`**
-   - Currently uploaded original PDFs (`/app/uploads`) and custom bank RAG documents (`/app/knowledge`) live inside the container filesystem and reset on `docker compose up --build`.
-   - Mount named Docker volumes (`specagent_uploads:/app/uploads`, `specagent_knowledge:/app/knowledge`) or store uploaded blobs in PostgreSQL / S3-compatible object storage (MinIO).
+2. **✅ Persistent Volumes for `uploads/` and `knowledge/` in `docker-compose.yml`**
+   - Mounted named Docker volumes `specagent_uploads:/app/uploads` and `specagent_knowledge:/app/knowledge` on the `api` service so uploaded originals and custom bank RAG documents survive `docker compose up --build`.
 
 ### P1 — Roles, Authentication & Access Control (RBAC)
 

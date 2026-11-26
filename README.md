@@ -87,23 +87,44 @@ Services started:
 - **Health check:** http://localhost:5199/health
 - **Qdrant Dashboard:** http://localhost:6333/dashboard
 - **PostgreSQL:** `localhost:5432` (`specagent` / `specagent`)
+- **Persistent volumes:** `pgdata` (PostgreSQL), `qdrant_data` (Qdrant), `specagent_uploads` (`/app/uploads`), and `specagent_knowledge` (`/app/knowledge`) survive `docker compose up --build`.
 
-To rebuild only the API container after code changes (preserving PostgreSQL & Qdrant data):
+To rebuild only the API container after code changes (preserving PostgreSQL, Qdrant, uploads & custom RAG files):
 
 ```bash
 docker compose up --build -d api
 ```
 
-### 3. Run Locally (Without Docker)
+### 3. Single-Command CLI Mode (BCC-HUB Submission)
+
+Audit any `.pdf`, `.docx`, `.md`, or `.txt` specification with a single command and write the official demasked Markdown report (`report.md`):
+
+```bash
+cd doc1/prototype
+dotnet run --project src/SpecAgent.Api -- --input dataset/specs/bcc-card-expenses.md --output report.md
+```
+
+Or directly from the repository root:
+
+```bash
+dotnet run --project doc1/prototype/src/SpecAgent.Api -- --input doc1/prototype/dataset/specs/p2p-transfers-tz.pdf --output report.md
+```
+
+Optional flags:
+- `--fixed <path>` — also export the auto-patched specification (`.md`, `.pdf`, or `.docx` chosen by file extension)
+- `--with-gherkin` — include Gherkin acceptance criteria in the `--fixed` output
+- `--help` — show CLI usage
+
+### 4. Run Web UI Locally (Without Docker)
 
 ```bash
 cd doc1/prototype
 dotnet run --project src/SpecAgent.Api
 ```
 
-### 4. Run Unit Tests (0 LLM Tokens)
+### 5. Run Unit Tests (0 LLM Tokens)
 
-All 18 unit tests use deterministic fakes and require no API keys:
+All unit tests use deterministic fakes and require no API keys:
 
 ```bash
 cd doc1/prototype
