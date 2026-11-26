@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
@@ -9,6 +10,7 @@ using SpecAgent.Agents.Llm;
 using SpecAgent.Agents.Orchestration;
 using SpecAgent.Agents.Storage;
 using SpecAgent.Agents.Tools;
+using SpecAgent.Api.Auth;
 using SpecAgent.Api.Cli;
 using SpecAgent.Api.Export;
 using SpecAgent.Core.Documents;
@@ -56,18 +58,36 @@ if (AuditCliRunner.IsCliMode(args))
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSpecAgentIngestion();
 builder.Services.AddSpecAgents(builder.Configuration, builder.Environment.ContentRootPath);
+builder.Services.AddSpecAgentAuth(builder.Configuration);
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
 
 var app = builder.Build();
 
 if (app.Services.GetService<PostgresEventStore>() is { } pg) await pg.EnsureSchemaAsync();
+if (app.Services.GetService<PostgresAdminAuditLog>() is { } adminLog) await adminLog.EnsureSchemaAsync();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.UseAuthentication();
+app.UseAuthorization();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 
-var api = app.MapGroup("/api/audits");
+app.MapGet("/api/me", (ClaimsPrincipal user, AuthOptions authOpts) =>
+{
+    var current = CurrentUser.From(user, authOpts.EffectiveMode);
+    return Results.Ok(new
+    {
+        authenticated = user.Identity?.IsAuthenticated ?? false,
+        authMode = current.AuthMode,
+        sub = current.Sub,
+        name = current.Name,
+        role = current.Role,
+        isAdmin = current.IsAdmin,
+    });
+}).RequireAuthorization(AuthPolicies.AnalystOrAdmin);
+
+var api = app.MapGroup("/api/audits").RequireAuthorization(AuthPolicies.AnalystOrAdmin);
 
 // 0. List recent saved sessions (from Postgres) with document names & scores so UI can reopen past audits with 0 LLM tokens.
 api.MapGet("/recent", async (IServiceProvider sp, CancellationToken ct) =>
@@ -336,9 +356,28 @@ api.MapGet("/{id}/original.pdf", async (string id, IEventStore events, PiiMasker
     return Results.Bytes(pdfBytes, "application/pdf");
 });
 
-// 10. Runtime Settings (Patches, Model Routing, PII Masking) — Admin-only mutation.
-static bool IsAnalystRole(HttpRequest req) =>
-    string.Equals(req.Headers["X-SpecAgent-Role"].ToString(), "analyst", StringComparison.OrdinalIgnoreCase);
+// 10. Runtime Settings (Patches, Model Routing, PII Masking) — RBAC enforced via ASP.NET Core policies.
+static object SnapshotSettings(PatchOptions p, ModelRoutingOptions m, PiiMasker masker) => new
+{
+    patches = new
+    {
+        minSeverity = p.MinSeverity.ToString(),
+        maxPatches = p.MaxPatches,
+        maxRounds = p.MaxRounds,
+        parallelism = p.Parallelism,
+        includeGherkinInFixed = p.IncludeGherkinInFixed,
+    },
+    model = new
+    {
+        defaultModel = m.Default.Model,
+        defaultEffort = m.Default.Effort,
+    },
+    pii = new
+    {
+        enabled = masker.Enabled,
+        kinds = PiiMasker.AllKinds.ToDictionary(k => k, k => masker.EnabledKinds.Contains(k)),
+    },
+};
 
 app.MapGet("/api/settings", (IOptions<PatchOptions> patchOpts, IOptions<ModelRoutingOptions> modelOpts, PiiMasker masker, IConfiguration config) =>
 {
@@ -369,12 +408,13 @@ app.MapGet("/api/settings", (IOptions<PatchOptions> patchOpts, IOptions<ModelRou
             kinds = PiiMasker.AllKinds.ToDictionary(k => k, k => masker.EnabledKinds.Contains(k)),
         },
     });
-});
+}).RequireAuthorization(AuthPolicies.AnalystOrAdmin);
 
-app.MapPut("/api/settings", (HttpRequest req, SettingsUpdateRequest body, IOptions<PatchOptions> patchOpts, IOptions<ModelRoutingOptions> modelOpts, PiiMasker masker) =>
+app.MapPut("/api/settings", async (ClaimsPrincipal user, AuthOptions authOpts, SettingsUpdateRequest body,
+    IOptions<PatchOptions> patchOpts, IOptions<ModelRoutingOptions> modelOpts, PiiMasker masker,
+    IAdminAuditLog auditLog, CancellationToken ct) =>
 {
-    if (IsAnalystRole(req))
-        return Results.Json(new { error = "Только администратор может изменять настройки." }, statusCode: 403);
+    var before = SnapshotSettings(patchOpts.Value, modelOpts.Value, masker);
 
     if (body.Patches is { } p)
     {
@@ -410,8 +450,13 @@ app.MapPut("/api/settings", (HttpRequest req, SettingsUpdateRequest body, IOptio
         }
     }
 
+    var after = SnapshotSettings(patchOpts.Value, modelOpts.Value, masker);
+    var actor = CurrentUser.From(user, authOpts.EffectiveMode);
+    await auditLog.RecordAsync(actor.Sub, actor.Role, "settings.update", "runtime-settings",
+        new { before, after }, ct);
+
     return Results.Ok(new { status = "saved" });
-});
+}).RequireAuthorization(AuthPolicies.AdminOnly);
 
 // 11. RAG Knowledge Base reference documents (list / upload / delete) — Admin-only mutation.
 var builtInKbFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -447,13 +492,12 @@ app.MapGet("/api/knowledge", (IKnowledgeBase kb, IConfiguration config, IWebHost
         })
         .ToList();
     return Results.Ok(files);
-});
+}).RequireAuthorization(AuthPolicies.AnalystOrAdmin);
 
-app.MapPost("/api/knowledge", async (HttpRequest req, IFormFile file, DocumentParserRegistry parsers, IKnowledgeBase kb, IConfiguration config, IWebHostEnvironment env) =>
+app.MapPost("/api/knowledge", async (ClaimsPrincipal user, AuthOptions authOpts, IFormFile file,
+    DocumentParserRegistry parsers, IKnowledgeBase kb, IAdminAuditLog auditLog,
+    IConfiguration config, IWebHostEnvironment env, CancellationToken ct) =>
 {
-    if (IsAnalystRole(req))
-        return Results.Json(new { error = "Только администратор может добавлять документы в базу знаний RAG." }, statusCode: 403);
-
     var dir = ResolveKbDir(kb, config, env.ContentRootPath);
     Directory.CreateDirectory(dir);
 
@@ -466,7 +510,7 @@ app.MapPost("/api/knowledge", async (HttpRequest req, IFormFile file, DocumentPa
     if (file.FileName.EndsWith(".md", StringComparison.OrdinalIgnoreCase) || file.FileName.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
     {
         using var sr = new StreamReader(file.OpenReadStream(), Encoding.UTF8);
-        mdContent = await sr.ReadToEndAsync();
+        mdContent = await sr.ReadToEndAsync(ct);
     }
     else
     {
@@ -481,16 +525,21 @@ app.MapPost("/api/knowledge", async (HttpRequest req, IFormFile file, DocumentPa
         mdContent = sb.ToString();
     }
 
-    await File.WriteAllTextAsync(targetPath, mdContent, Encoding.UTF8);
+    await File.WriteAllTextAsync(targetPath, mdContent, Encoding.UTF8, ct);
     if (kb is SemanticKnowledgeBase skb) await skb.ReloadAsync();
-    return Results.Ok(new { name = Path.GetFileName(targetPath), sizeBytes = Encoding.UTF8.GetByteCount(mdContent) });
-}).DisableAntiforgery();
 
-app.MapDelete("/api/knowledge/{name}", async (HttpRequest req, string name, IKnowledgeBase kb, IConfiguration config, IWebHostEnvironment env) =>
+    var savedName = Path.GetFileName(targetPath);
+    var sizeBytes = Encoding.UTF8.GetByteCount(mdContent);
+    var actor = CurrentUser.From(user, authOpts.EffectiveMode);
+    await auditLog.RecordAsync(actor.Sub, actor.Role, "knowledge.upload", savedName,
+        new { originalFileName = file.FileName, savedFileName = savedName, sizeBytes }, ct);
+
+    return Results.Ok(new { name = savedName, sizeBytes });
+}).DisableAntiforgery().RequireAuthorization(AuthPolicies.AdminOnly);
+
+app.MapDelete("/api/knowledge/{name}", async (ClaimsPrincipal user, AuthOptions authOpts, string name,
+    IKnowledgeBase kb, IAdminAuditLog auditLog, IConfiguration config, IWebHostEnvironment env, CancellationToken ct) =>
 {
-    if (IsAnalystRole(req))
-        return Results.Json(new { error = "Только администратор может удалять документы из базы знаний RAG." }, statusCode: 403);
-
     var safe = Path.GetFileName(name);
     if (string.IsNullOrWhiteSpace(safe) || !safe.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
         return Results.BadRequest(new { error = "Некорректное имя файла." });
@@ -501,8 +550,20 @@ app.MapDelete("/api/knowledge/{name}", async (HttpRequest req, string name, IKno
 
     File.Delete(path);
     if (kb is SemanticKnowledgeBase skb) await skb.ReloadAsync();
+
+    var actor = CurrentUser.From(user, authOpts.EffectiveMode);
+    await auditLog.RecordAsync(actor.Sub, actor.Role, "knowledge.delete", safe,
+        new { deleted = safe }, ct);
+
     return Results.Ok(new { deleted = safe });
-});
+}).RequireAuthorization(AuthPolicies.AdminOnly);
+
+// 12. Admin Audit Trail (read-only, AdminOnly).
+app.MapGet("/api/admin/audit-log", async (int? limit, IAdminAuditLog auditLog, CancellationToken ct) =>
+{
+    var entries = await auditLog.ListRecentAsync(limit ?? 50, ct);
+    return Results.Ok(entries);
+}).RequireAuthorization(AuthPolicies.AdminOnly);
 
 app.Run();
 return 0;

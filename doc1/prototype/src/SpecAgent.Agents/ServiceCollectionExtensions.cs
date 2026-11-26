@@ -20,16 +20,19 @@ public static class ServiceCollectionExtensions
         services.Configure<ModelRoutingOptions>(config.GetSection(ModelRoutingOptions.Section));
         services.Configure<PatchOptions>(config.GetSection("Patches"));
 
-        // Event store: the session log. InMemory for dev/tests, Postgres for anything that must survive a restart.
+        // Event store & admin audit trail: InMemory for dev/tests, Postgres for anything that must survive a restart.
         if (config["EventStore"] is "Postgres" && config.GetConnectionString("Postgres") is { } cs)
         {
             services.AddSingleton(NpgsqlDataSource.Create(cs));
             services.AddSingleton<PostgresEventStore>();
             services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<PostgresEventStore>());
+            services.AddSingleton<PostgresAdminAuditLog>();
+            services.AddSingleton<IAdminAuditLog>(sp => sp.GetRequiredService<PostgresAdminAuditLog>());
         }
         else
         {
             services.AddSingleton<IEventStore, InMemoryEventStore>();
+            services.AddSingleton<IAdminAuditLog, InMemoryAdminAuditLog>();
         }
 
         var kbPath = config["Knowledge:Path"] ?? "knowledge";

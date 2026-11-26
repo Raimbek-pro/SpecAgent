@@ -55,6 +55,11 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       QWEN_API_KEY: ${QWEN_API_KEY:-}
+      Auth__Mode: ${AUTH_MODE:-Auto}
+      Auth__Authority: ${AUTH_AUTHORITY:-}
+      Auth__Audience: ${AUTH_AUDIENCE:-specagent-api}
+      Auth__Issuer: ${AUTH_ISSUER:-specagent-auth}
+      JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:-}
 
 volumes:
   pgdata:

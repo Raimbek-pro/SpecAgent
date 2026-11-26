@@ -137,7 +137,8 @@ dotnet test --nologo
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/health` | Service health check |
+| `GET` | `/health` | Service health check (anonymous) |
+| `GET` | `/api/me` | Authenticated user identity, role (`admin`/`analyst`), and auth mode (`jwt`/`demo`) |
 | `GET` | `/api/audits/recent` | List recent PostgreSQL audit sessions (0 tokens) |
 | `POST` | `/api/audits` | Upload `.pdf`, `.docx`, `.md`, or `.txt` to start an audit |
 | `GET` | `/api/audits/{id}/events` | Live Server-Sent Events (SSE) execution trace |
@@ -149,8 +150,16 @@ dotnet test --nologo
 | `GET` | `/api/audits/{id}/export/fixed.pdf` | View/download (`?download=1`) clean patched PDF |
 | `GET` | `/api/audits/{id}/export/fixed.docx` | Download clean patched Microsoft Word `.docx` |
 | `GET` | `/api/audits/{id}/original.pdf` | View original uploaded PDF (or rendered original) |
-| `GET` / `PUT` | `/api/settings` | Read / update runtime audit, PII, and model settings (Admin only) |
-| `GET` / `POST` / `DELETE` | `/api/knowledge` | List / upload / delete RAG reference documents (Admin only) |
+| `GET` / `PUT` | `/api/settings` | Read (`AnalystOrAdmin`) / update (`AdminOnly`) runtime audit, PII, and model settings |
+| `GET` / `POST` / `DELETE` | `/api/knowledge` | List (`AnalystOrAdmin`) / upload & delete (`AdminOnly`) RAG reference documents |
+| `GET` | `/api/admin/audit-log` | Inspect PostgreSQL admin audit trail (`AdminOnly`) |
+
+### Authentication & RBAC
+
+SpecAgent uses ASP.NET Core Authentication & Authorization policies (`AdminOnly`, `AnalystOrAdmin`):
+- **Production / Bank SSO (`Auth:Mode = Jwt` or `Auto` with `AUTH_AUTHORITY` / `JWT_SIGNING_KEY`):** validates JWT Bearer tokens (OIDC discovery for Keycloak / Entra ID, including `realm_access.roles`, or HS256 `JWT_SIGNING_KEY`). Header spoofing is rejected with `401 Unauthorized`; analysts receive `403 Forbidden` on admin endpoints.
+- **Local Demo (`Auth:Mode = Auto` with no IdP configured):** maps `X-SpecAgent-Role` through the same ASP.NET Core policy pipeline so the local workbench works out of the box.
+- Every change to Settings, PII rules, LLM routing, and RAG Knowledge Base is recorded in PostgreSQL table `admin_audit_log` (`migrations/002_admin_audit_log.sql`).
 
 ---
 

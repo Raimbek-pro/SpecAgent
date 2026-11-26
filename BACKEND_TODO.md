@@ -39,17 +39,19 @@ The following endpoints and capabilities are live and verified (18/18 unit tests
 2. **✅ Persistent Volumes for `uploads/` and `knowledge/` in `docker-compose.yml`**
    - Mounted named Docker volumes `specagent_uploads:/app/uploads` and `specagent_knowledge:/app/knowledge` on the `api` service so uploaded originals and custom bank RAG documents survive `docker compose up --build`.
 
-### P1 — Roles, Authentication & Access Control (RBAC)
+### P1 — Roles, Authentication & Access Control (RBAC) (Done ✅)
 
-3. **Real Authentication & Bank SSO (Replace Demo `X-SpecAgent-Role` Header)**
-   - Right now `IsAnalystRole(HttpRequest)` trusts the client-supplied `X-SpecAgent-Role` header for UI demo purposes.
-   - Replace with ASP.NET Core JWT Bearer / OIDC authentication (Keycloak / Azure AD / corporate IdP):
-     - Define policies: `[Authorize(Policy = "AdminOnly")]` on `PUT /api/settings`, `POST /api/knowledge`, `DELETE /api/knowledge/{name}`.
-     - Define `[Authorize(Policy = "AnalystOrAdmin")]` on `/api/audits/*`.
-     - Return the authenticated user's role & name via `GET /api/me` so the frontend hides/disables admin controls automatically without a manual switcher.
+3. **✅ Real Authentication & Bank SSO (Replaced Manual `X-SpecAgent-Role` Check)**
+   - Implemented in `SpecAgent.Api/Auth/AuthExtensions.cs` using ASP.NET Core `JwtBearer` + Authorization Policies (`AdminOnly`, `AnalystOrAdmin`):
+     - Supports OIDC IdPs (`Auth:Authority` / `Auth:Audience` for Keycloak / Azure AD, including `realm_access.roles` normalization) and symmetric HS256 (`JWT_SIGNING_KEY`).
+     - Enforces `RequireAuthorization("AdminOnly")` on `PUT /api/settings`, `POST /api/knowledge`, `DELETE /api/knowledge/{name}`, and `GET /api/admin/audit-log`; `RequireAuthorization("AnalystOrAdmin")` on `/api/audits/*`, `GET /api/settings`, `GET /api/knowledge`, and `GET /api/me`.
+     - `GET /api/me` returns `{ authenticated, authMode, sub, name, role, isAdmin }`.
+     - Falls back cleanly to `DemoHeaderAuthHandler` only when `Auth:Mode=Auto` and no IdP/signing key is configured, while still enforcing the exact same policies.
 
-4. **Admin Audit Trail in PostgreSQL**
-   - Add an `admin_audit_log` table (`id`, `actor_sub`, `actor_role`, `action`, `target`, `diff_json`, `created_at`) recording every change to Settings, PII rules, LLM routing, and RAG knowledge base uploads/deletions.
+4. **✅ Admin Audit Trail in PostgreSQL (`admin_audit_log`)**
+   - Added SQL migration `doc1/prototype/migrations/002_admin_audit_log.sql` and `IAdminAuditLog` (`PostgresAdminAuditLog` + `InMemoryAdminAuditLog`).
+   - Automatically records `actor_sub`, `actor_role`, `action`, `target`, and JSONB `diff_json` (`before`/`after`) for `settings.update`, `knowledge.upload`, and `knowledge.delete`, queryable via `GET /api/admin/audit-log`.
+   - Covered by `AuthAndAdminAuditTests` (`WebApplicationFactory` JWT/RBAC + live PostgreSQL tests).
 
 ### P2 — Security & Production Hardening
 
