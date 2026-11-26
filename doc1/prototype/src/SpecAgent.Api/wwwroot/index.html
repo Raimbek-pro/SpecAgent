@@ -641,9 +641,12 @@ mark.on { background: #fff0f0; border-radius: 3px; }
 <body>
 
 <header class="topbar">
-  <button type="button" id="brand-toggle" class="brand" title="Открыть / скрыть панель проектов и файлов">
+  <button type="button" id="brand-toggle" class="brand" title="Открыть / скрыть панель проектов (⌘B)">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" style="color:var(--mute);flex-shrink:0">
+      <rect x="1.5" y="2.5" width="13" height="11" rx="2"/>
+      <line x1="5.5" y1="2.5" x2="5.5" y2="13.5"/>
+    </svg>
     <img src="/logo.png?v=4" class="brand-logo" alt="SpecAgent">SpecAgent
-    <span style="font-size:11px;color:var(--mute);margin-left:2px">☰</span>
   </button>
   <span class="sep"></span>
   <button type="button" id="btn-new-tab" class="btn">+ Новое ТЗ</button>
@@ -655,15 +658,9 @@ mark.on { background: #fff0f0; border-radius: 3px; }
 </header>
 
 <div class="workbench">
-  <!-- XCODE PROJECT NAVIGATOR SIDEBAR (toggled by clicking SpecAgent) -->
+  <!-- CLAUDE-STYLE COLLAPSIBLE SIDEBAR (single header in topbar, no duplicate bar!) -->
   <nav class="sidebar" id="history-sidebar">
-    <div class="sidebar-head">
-      <span style="display:inline-flex;align-items:center;gap:7px">
-        <img src="/logo.png?v=4" class="sidebar-logo" style="width:20px;height:20px;object-fit:contain" alt="">
-        <span>SpecAgent · Проекты</span>
-      </span>
-      <button type="button" class="icon-btn" id="sidebar-close" title="Скрыть">×</button>
-    </div>
+    <div style="padding:10px 12px 4px;font:600 11px/1 var(--sans);color:var(--mute);letter-spacing:0.02em">Проекты</div>
     <div class="sidebar-list" id="history-list">
       <p class="empty" style="padding:8px">Загрузка…</p>
     </div>
@@ -903,7 +900,9 @@ function toggleSidebar(force) {
   btn.classList.toggle('open', open);
 }
 $('#brand-toggle').onclick = () => toggleSidebar();
-$('#sidebar-close').onclick = () => toggleSidebar(false);
+window.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') { e.preventDefault(); toggleSidebar(); }
+});
 
 // Tab management
 function createNewTab() {
