@@ -159,7 +159,9 @@ dotnet test --nologo
 SpecAgent uses ASP.NET Core Authentication & Authorization policies (`AdminOnly`, `AnalystOrAdmin`):
 - **Production / Bank SSO (`Auth:Mode = Jwt` or `Auto` with `AUTH_AUTHORITY` / `JWT_SIGNING_KEY`):** validates JWT Bearer tokens (OIDC discovery for Keycloak / Entra ID, including `realm_access.roles`, or HS256 `JWT_SIGNING_KEY`). Header spoofing is rejected with `401 Unauthorized`; analysts receive `403 Forbidden` on admin endpoints.
 - **Local Demo (`Auth:Mode = Auto` with no IdP configured):** maps `X-SpecAgent-Role` through the same ASP.NET Core policy pipeline so the local workbench works out of the box.
-- Every change to Settings, PII rules, LLM routing, and RAG Knowledge Base is recorded in PostgreSQL table `admin_audit_log` (`migrations/002_admin_audit_log.sql`).
+- Every change to Settings, PII rules, LLM routing, and RAG Knowledge Base is recorded in PostgreSQL table `admin_audit_log` (`migrations/002_admin_audit_log.sql`) and persisted across restarts in `system_settings` (`migrations/003_pii_vault_and_settings.sql`).
+- **Encrypted PII Vault (`PostgresPiiVault`):** when running with `EventStore=Postgres`, real PII values are encrypted at rest with **AES-256-GCM** (keyed via `PII_VAULT_KEY`) with automatic TTL retention purge (`PII_VAULT_TTL_DAYS=30`) so reopened sessions demask cleanly even after container restarts.
+- **Upload & API Hardening:** 25 MB upload size limit, magic-byte file verification (`%PDF-`, `PK\x03\x04`, non-binary text), per-user/IP sliding-window rate limiting (`429`), strict same-origin CORS, CSP, and `X-Content-Type-Options: nosniff`.
 
 ---
 

@@ -53,19 +53,21 @@ The following endpoints and capabilities are live and verified (18/18 unit tests
    - Automatically records `actor_sub`, `actor_role`, `action`, `target`, and JSONB `diff_json` (`before`/`after`) for `settings.update`, `knowledge.upload`, and `knowledge.delete`, queryable via `GET /api/admin/audit-log`.
    - Covered by `AuthAndAdminAuditTests` (`WebApplicationFactory` JWT/RBAC + live PostgreSQL tests).
 
-### P2 — Security & Production Hardening
+### P2 — Security & Production Hardening (Done ✅)
 
-5. **Persistent, Encrypted PII Vault (`PostgresPiiVault`)**
-   - Currently `IPiiVault` is `InMemoryPiiVault`, meaning demasking of old sessions does not survive API restarts (reopened sessions show `[PHONE_1]`/`[IBAN_1]` after restart).
-   - Implement `PostgresPiiVault` storing `session_id`, `token`, and **AES-256-GCM encrypted** `ciphertext` (key loaded from KMS / Vault / `PII_VAULT_KEY` env var) with automatic TTL purge (e.g., 30 days) for GDPR / Kazakhstan Personal Data Law compliance.
+5. **✅ Persistent, Encrypted PII Vault (`PostgresPiiVault`)**
+   - Implemented in `SpecAgent.Agents/Storage/PostgresPiiVault.cs` + migration `003_pii_vault_and_settings.sql`.
+   - Encrypts PII values with **AES-256-GCM** (random 12-byte nonce, 16-byte tag, AAD bound to `session_id|token`, keyed HMAC-SHA256 deduplication index, master key loaded from `PII_VAULT_KEY`) with automatic TTL retention purge (`PiiVaultCleanupWorker`, default 30 days).
 
-6. **Upload Validation, Size Limits & Rate Limiting**
-   - Enforce `RequestSizeLimit` (e.g., 25 MB max) and magic-byte validation (`%PDF-`, `PK\x03\x04` for `.docx`) on `POST /api/audits` and `POST /api/knowledge`.
-   - Add `Microsoft.AspNetCore.RateLimiting` (fixed/sliding window per user/IP) on `POST /api/audits` and `POST /api/audits/{id}/ask` to prevent LLM token-exhaustion abuse.
-   - Add Content-Security-Policy (CSP), `X-Content-Type-Options: nosniff`, and strict CORS policy.
+6. **✅ Upload Validation, Size Limits, Rate Limiting & Security Headers**
+   - Implemented in `SpecAgent.Api/Security/SecurityExtensions.cs` (`UploadValidator`, `AddSpecAgentSecurity`, `UseSpecAgentSecurityHeaders`):
+     - 25 MB upload limit (`413 Payload Too Large`) + magic-byte validation (`%PDF-`, `PK\x03\x04`, binary NUL check) on `POST /api/audits` and `POST /api/knowledge`.
+     - Per-user/IP sliding-window rate limiting (`Microsoft.AspNetCore.RateLimiting`, `429 Too Many Requests`) on `POST /api/audits` and `POST /api/audits/{id}/ask`.
+     - Added `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy`, and strict CORS policy (`StrictCors`).
 
-7. **Persistent Settings in PostgreSQL**
-   - Persist `PatchOptions`, `ModelRoutingOptions`, and `PiiMasker` settings in a `system_settings` table so Admin changes made in the UI survive container restarts and stay synchronized across horizontally scaled API replicas.
+7. **✅ Persistent Settings in PostgreSQL (`system_settings`)**
+   - Implemented `ISystemSettingsStore` (`PostgresSystemSettingsStore` + `InMemorySystemSettingsStore`) persisting `PatchOptions`, `ModelRoutingOptions`, and `PiiMasker` settings in `system_settings` and hydrating them automatically on API startup.
+   - Covered by `SecurityAndPersistenceTests` (unit, `WebApplicationFactory`, and live PostgreSQL tests).
 
 ### P3 — Testing & Observability
 

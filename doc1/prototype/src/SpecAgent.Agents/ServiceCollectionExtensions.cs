@@ -1,6 +1,7 @@
 using Anthropic;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using SpecAgent.Agents.Agents;
@@ -10,6 +11,7 @@ using SpecAgent.Agents.Orchestration;
 using SpecAgent.Agents.Storage;
 using SpecAgent.Agents.Tools;
 using SpecAgent.Core.Events;
+using SpecAgent.Ingestion.Pii;
 
 namespace SpecAgent.Agents;
 
@@ -20,7 +22,8 @@ public static class ServiceCollectionExtensions
         services.Configure<ModelRoutingOptions>(config.GetSection(ModelRoutingOptions.Section));
         services.Configure<PatchOptions>(config.GetSection("Patches"));
 
-        // Event store & admin audit trail: InMemory for dev/tests, Postgres for anything that must survive a restart.
+        // Event store, encrypted PII vault, settings & admin audit trail:
+        // InMemory for dev/tests, Postgres for anything that must survive a restart.
         if (config["EventStore"] is "Postgres" && config.GetConnectionString("Postgres") is { } cs)
         {
             services.AddSingleton(NpgsqlDataSource.Create(cs));
@@ -28,11 +31,24 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<IEventStore>(sp => sp.GetRequiredService<PostgresEventStore>());
             services.AddSingleton<PostgresAdminAuditLog>();
             services.AddSingleton<IAdminAuditLog>(sp => sp.GetRequiredService<PostgresAdminAuditLog>());
+            services.AddSingleton<PostgresSystemSettingsStore>();
+            services.AddSingleton<ISystemSettingsStore>(sp => sp.GetRequiredService<PostgresSystemSettingsStore>());
+
+            var vaultKey = config["PiiVault:Key"] ?? config["PII_VAULT_KEY"] ?? Environment.GetEnvironmentVariable("PII_VAULT_KEY");
+            var ttlDays = int.TryParse(config["PiiVault:TtlDays"], out var days) ? days : 30;
+            services.AddSingleton(sp => new PostgresPiiVault(
+                sp.GetRequiredService<NpgsqlDataSource>(),
+                vaultKey,
+                ttlDays,
+                sp.GetRequiredService<ILogger<PostgresPiiVault>>()));
+            services.Replace(ServiceDescriptor.Singleton<IPiiVault>(sp => sp.GetRequiredService<PostgresPiiVault>()));
+            services.AddHostedService<PiiVaultCleanupWorker>();
         }
         else
         {
             services.AddSingleton<IEventStore, InMemoryEventStore>();
             services.AddSingleton<IAdminAuditLog, InMemoryAdminAuditLog>();
+            services.AddSingleton<ISystemSettingsStore, InMemorySystemSettingsStore>();
         }
 
         var kbPath = config["Knowledge:Path"] ?? "knowledge";

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using SpecAgent.Agents;
@@ -13,6 +14,7 @@ using SpecAgent.Agents.Tools;
 using SpecAgent.Api.Auth;
 using SpecAgent.Api.Cli;
 using SpecAgent.Api.Export;
+using SpecAgent.Api.Security;
 using SpecAgent.Core.Documents;
 using SpecAgent.Core.Events;
 using SpecAgent.Core.Findings;
@@ -59,17 +61,36 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddSpecAgentIngestion();
 builder.Services.AddSpecAgents(builder.Configuration, builder.Environment.ContentRootPath);
 builder.Services.AddSpecAgentAuth(builder.Configuration);
+builder.Services.AddSpecAgentSecurity(builder.Configuration);
+var maxUploadBytes = builder.Configuration.GetValue<long?>("Security:MaxUploadBytes") ?? (25L * 1024 * 1024);
+builder.WebHost.ConfigureKestrel(k => k.Limits.MaxRequestBodySize = maxUploadBytes + (1024 * 1024));
+builder.Services.Configure<FormOptions>(f => f.MultipartBodyLengthLimit = maxUploadBytes + (1024 * 1024));
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
 
 var app = builder.Build();
 
 if (app.Services.GetService<PostgresEventStore>() is { } pg) await pg.EnsureSchemaAsync();
 if (app.Services.GetService<PostgresAdminAuditLog>() is { } adminLog) await adminLog.EnsureSchemaAsync();
+if (app.Services.GetService<PostgresPiiVault>() is { } piiVault) await piiVault.EnsureSchemaAsync();
+if (app.Services.GetService<PostgresSystemSettingsStore>() is { } pgSettings) await pgSettings.EnsureSchemaAsync();
 
+// Hydrate runtime settings from durable storage so Admin changes survive restarts/replicas.
+if (await app.Services.GetRequiredService<ISystemSettingsStore>().LoadAsync() is { } persisted)
+{
+    ApplyPersistedSettings(
+        persisted,
+        app.Services.GetRequiredService<IOptions<PatchOptions>>().Value,
+        app.Services.GetRequiredService<IOptions<ModelRoutingOptions>>().Value,
+        app.Services.GetRequiredService<PiiMasker>());
+}
+
+app.UseSpecAgentSecurityHeaders();
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.UseCors(SecurityExtensions.StrictCorsPolicy);
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 
@@ -128,11 +149,20 @@ api.MapGet("/recent", async (IServiceProvider sp, CancellationToken ct) =>
 var uploadsDir = Path.Combine(app.Environment.ContentRootPath, "uploads");
 Directory.CreateDirectory(uploadsDir);
 
-api.MapPost("/", async (IFormFile file, DocumentParserRegistry parsers, PiiMasker masker, IEventStore events,
-    IPiiVault vault, AuditQueue queue, CancellationToken ct) =>
+api.MapPost("/", async (IFormFile file, SecurityOptions secOpts, DocumentParserRegistry parsers, PiiMasker masker,
+    IEventStore events, IPiiVault vault, AuditQueue queue, CancellationToken ct) =>
 {
+    if (file.Length > secOpts.MaxUploadBytes)
+        return Results.Json(new { error = $"Файл превышает максимальный размер ({secOpts.MaxUploadBytes / (1024 * 1024)} МБ)." }, statusCode: 413);
+
     var ms = new MemoryStream();
     await file.CopyToAsync(ms, ct);
+    var bytes = ms.ToArray();
+
+    var validation = UploadValidator.Validate(file.FileName, bytes, secOpts.MaxUploadBytes);
+    if (!validation.IsValid)
+        return Results.Json(new { error = validation.Error }, statusCode: validation.StatusCode);
+
     ms.Position = 0;
 
     TzDocument parsed;
@@ -148,7 +178,7 @@ api.MapPost("/", async (IFormFile file, DocumentParserRegistry parsers, PiiMaske
     var sessionId = $"s-{Guid.NewGuid():N}"[..14];
     var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
     if (ext is ".pdf" or ".docx" or ".md" or ".txt")
-        await File.WriteAllBytesAsync(Path.Combine(uploadsDir, $"{sessionId}{ext}"), ms.ToArray(), ct);
+        await File.WriteAllBytesAsync(Path.Combine(uploadsDir, $"{sessionId}{ext}"), bytes, ct);
 
     var masked = masker.Mask(sessionId, parsed);
     await events.AppendAsync(sessionId, EventTypes.TzIngested, "ingestion",
@@ -156,7 +186,7 @@ api.MapPost("/", async (IFormFile file, DocumentParserRegistry parsers, PiiMaske
         new IngestedPayload(masked, vault.Count(sessionId)), ct);
     await queue.EnqueueAsync(sessionId);
     return Results.Accepted($"/api/audits/{sessionId}", new { sessionId });
-}).DisableAntiforgery();
+}).DisableAntiforgery().RequireRateLimiting(RateLimitPolicies.AuditUpload);
 
 // 2. Live execution trace (Server-Sent Events) straight from the session log.
 api.MapGet("/{id}/events", async (string id, IEventStore events, HttpContext http, CancellationToken ct) =>
@@ -236,7 +266,7 @@ api.MapPost("/{id}/ask", async (string id, AskRequest req, AuditOrchestrator orc
         return Results.Ok(answer with { Answer = masker.Demask(id, answer.Answer) });
     }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
-});
+}).RequireRateLimiting(RateLimitPolicies.AgentAsk);
 
 // 7. Manual wake(): re-enqueue a session (e.g. after RUN_FAILED caused by an outage).
 api.MapPost("/{id}/resume", async (string id, AuditQueue queue) =>
@@ -410,9 +440,49 @@ app.MapGet("/api/settings", (IOptions<PatchOptions> patchOpts, IOptions<ModelRou
     });
 }).RequireAuthorization(AuthPolicies.AnalystOrAdmin);
 
+static PersistedSystemSettings ToPersistedSettings(PatchOptions p, ModelRoutingOptions m, PiiMasker masker) => new(
+    new PersistedPatchSettings(p.MinSeverity.ToString(), p.MaxPatches, p.MaxRounds, p.Parallelism, p.IncludeGherkinInFixed),
+    new PersistedModelSettings(m.Default.Model, m.Default.Effort),
+    new PersistedPiiSettings(masker.Enabled, PiiMasker.AllKinds.ToDictionary(k => k, k => masker.EnabledKinds.Contains(k))));
+
+static void ApplyPersistedSettings(PersistedSystemSettings saved, PatchOptions p, ModelRoutingOptions m, PiiMasker masker)
+{
+    if (saved.Patches is { } sp)
+    {
+        if (Enum.TryParse<Severity>(sp.MinSeverity, true, out var sev)) p.MinSeverity = sev;
+        p.MaxPatches = Math.Clamp(sp.MaxPatches, 1, 50);
+        p.MaxRounds = Math.Clamp(sp.MaxRounds, 1, 3);
+        p.Parallelism = Math.Clamp(sp.Parallelism, 1, 10);
+        p.IncludeGherkinInFixed = sp.IncludeGherkinInFixed;
+    }
+    if (saved.Model is { } sm)
+    {
+        if (!string.IsNullOrWhiteSpace(sm.DefaultModel))
+        {
+            m.Default.Model = sm.DefaultModel.Trim();
+            foreach (var ag in m.Agents.Values) ag.Model = sm.DefaultModel.Trim();
+        }
+        if (!string.IsNullOrWhiteSpace(sm.DefaultEffort))
+        {
+            m.Default.Effort = sm.DefaultEffort.Trim();
+            foreach (var ag in m.Agents.Values) ag.Effort = sm.DefaultEffort.Trim();
+        }
+    }
+    if (saved.Pii is { } spii)
+    {
+        masker.Enabled = spii.Enabled;
+        if (spii.Kinds is not null)
+        {
+            masker.EnabledKinds = new HashSet<string>(
+                spii.Kinds.Where(kv => kv.Value).Select(kv => kv.Key),
+                StringComparer.OrdinalIgnoreCase);
+        }
+    }
+}
+
 app.MapPut("/api/settings", async (ClaimsPrincipal user, AuthOptions authOpts, SettingsUpdateRequest body,
     IOptions<PatchOptions> patchOpts, IOptions<ModelRoutingOptions> modelOpts, PiiMasker masker,
-    IAdminAuditLog auditLog, CancellationToken ct) =>
+    ISystemSettingsStore settingsStore, IAdminAuditLog auditLog, CancellationToken ct) =>
 {
     var before = SnapshotSettings(patchOpts.Value, modelOpts.Value, masker);
 
@@ -452,6 +522,7 @@ app.MapPut("/api/settings", async (ClaimsPrincipal user, AuthOptions authOpts, S
 
     var after = SnapshotSettings(patchOpts.Value, modelOpts.Value, masker);
     var actor = CurrentUser.From(user, authOpts.EffectiveMode);
+    await settingsStore.SaveAsync(ToPersistedSettings(patchOpts.Value, modelOpts.Value, masker), actor.Sub, ct);
     await auditLog.RecordAsync(actor.Sub, actor.Role, "settings.update", "runtime-settings",
         new { before, after }, ct);
 
@@ -495,9 +566,20 @@ app.MapGet("/api/knowledge", (IKnowledgeBase kb, IConfiguration config, IWebHost
 }).RequireAuthorization(AuthPolicies.AnalystOrAdmin);
 
 app.MapPost("/api/knowledge", async (ClaimsPrincipal user, AuthOptions authOpts, IFormFile file,
-    DocumentParserRegistry parsers, IKnowledgeBase kb, IAdminAuditLog auditLog,
+    SecurityOptions secOpts, DocumentParserRegistry parsers, IKnowledgeBase kb, IAdminAuditLog auditLog,
     IConfiguration config, IWebHostEnvironment env, CancellationToken ct) =>
 {
+    if (file.Length > secOpts.MaxUploadBytes)
+        return Results.Json(new { error = $"Файл превышает максимальный размер ({secOpts.MaxUploadBytes / (1024 * 1024)} МБ)." }, statusCode: 413);
+
+    using var ms = new MemoryStream();
+    await file.CopyToAsync(ms, ct);
+    var bytes = ms.ToArray();
+
+    var validation = UploadValidator.Validate(file.FileName, bytes, secOpts.MaxUploadBytes);
+    if (!validation.IsValid)
+        return Results.Json(new { error = validation.Error }, statusCode: validation.StatusCode);
+
     var dir = ResolveKbDir(kb, config, env.ContentRootPath);
     Directory.CreateDirectory(dir);
 
@@ -509,13 +591,12 @@ app.MapPost("/api/knowledge", async (ClaimsPrincipal user, AuthOptions authOpts,
     string mdContent;
     if (file.FileName.EndsWith(".md", StringComparison.OrdinalIgnoreCase) || file.FileName.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
     {
-        using var sr = new StreamReader(file.OpenReadStream(), Encoding.UTF8);
-        mdContent = await sr.ReadToEndAsync(ct);
+        mdContent = Encoding.UTF8.GetString(bytes);
     }
     else
     {
-        await using var stream = file.OpenReadStream();
-        var parsed = parsers.Parse(stream, file.FileName);
+        ms.Position = 0;
+        var parsed = parsers.Parse(ms, file.FileName);
         var sb = new StringBuilder().AppendLine($"# {parsed.Title}").AppendLine();
         foreach (var s in parsed.Sections)
         {

@@ -51,14 +51,15 @@ public sealed partial class PiiMasker(IPiiVault vault)
     public string Mask(string sessionId, string text)
     {
         if (!Enabled) return text;
-        if (EnabledKinds.Contains("IIN"))
+        var kinds = EnabledKinds;
+        if (kinds.Contains("IIN"))
         {
             text = LabeledIin().Replace(text, m =>
                 m.Groups[1].Value + vault.Tokenize(sessionId, "IIN", m.Groups[2].Value));
         }
         foreach (var rule in Rules)
         {
-            if (!EnabledKinds.Contains(rule.Kind)) continue;
+            if (!kinds.Contains(rule.Kind)) continue;
             text = rule.Pattern.Replace(text, m =>
             {
                 if (m.Value.StartsWith('[')) return m.Value;

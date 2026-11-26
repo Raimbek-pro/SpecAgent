@@ -60,6 +60,11 @@ services:
       Auth__Audience: ${AUTH_AUDIENCE:-specagent-api}
       Auth__Issuer: ${AUTH_ISSUER:-specagent-auth}
       JWT_SIGNING_KEY: ${JWT_SIGNING_KEY:-}
+      PII_VAULT_KEY: ${PII_VAULT_KEY:-}
+      PiiVault__TtlDays: ${PII_VAULT_TTL_DAYS:-30}
+      Security__MaxUploadBytes: ${MAX_UPLOAD_BYTES:-26214400}
+      Security__RateLimit__AuditPerMinute: ${RATE_LIMIT_AUDIT_PER_MIN:-10}
+      Security__RateLimit__AskPerMinute: ${RATE_LIMIT_ASK_PER_MIN:-30}
 
 volumes:
   pgdata:
