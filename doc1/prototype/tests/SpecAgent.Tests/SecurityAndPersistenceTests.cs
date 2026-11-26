@@ -194,21 +194,35 @@ public class SecurityAndPersistenceTests
         var store1 = new PostgresSystemSettingsStore(dataSource);
         await store1.EnsureSchemaAsync();
 
-        var saved = new PersistedSystemSettings(
-            new PersistedPatchSettings("Critical", 7, 2, 4, true),
-            new PersistedModelSettings("kimi-k3.1-pro", "high"),
-            new PersistedPiiSettings(true, new Dictionary<string, bool> { ["IIN"] = true, ["PAN"] = true }));
+        var previous = await store1.LoadAsync();
+        try
+        {
+            var saved = new PersistedSystemSettings(
+                new PersistedPatchSettings("Critical", 7, 2, 4, true),
+                new PersistedModelSettings("kimi-k3.1-pro", "high"),
+                new PersistedPiiSettings(true, new Dictionary<string, bool> { ["IIN"] = true, ["PAN"] = true }));
 
-        await store1.SaveAsync(saved, "test-admin");
+            await store1.SaveAsync(saved, "test-admin");
 
-        // Fresh instance simulates container restart.
-        var store2 = new PostgresSystemSettingsStore(dataSource);
-        var loaded = await store2.LoadAsync();
-        Assert.NotNull(loaded);
-        Assert.Equal("Critical", loaded.Patches!.MinSeverity);
-        Assert.Equal(7, loaded.Patches.MaxPatches);
-        Assert.True(loaded.Patches.IncludeGherkinInFixed);
-        Assert.Equal("kimi-k3.1-pro", loaded.Model!.DefaultModel);
-        Assert.True(loaded.Pii!.Enabled);
+            // Fresh instance simulates container restart.
+            var store2 = new PostgresSystemSettingsStore(dataSource);
+            var loaded = await store2.LoadAsync();
+            Assert.NotNull(loaded);
+            Assert.Equal("Critical", loaded.Patches!.MinSeverity);
+            Assert.Equal(7, loaded.Patches.MaxPatches);
+            Assert.True(loaded.Patches.IncludeGherkinInFixed);
+            Assert.Equal("kimi-k3.1-pro", loaded.Model!.DefaultModel);
+            Assert.True(loaded.Pii!.Enabled);
+        }
+        finally
+        {
+            if (previous is not null)
+                await store1.SaveAsync(previous, "test-restore");
+            else
+            {
+                await using var cleanup = dataSource.CreateCommand("DELETE FROM system_settings WHERE key = 'runtime'");
+                await cleanup.ExecuteNonQueryAsync();
+            }
+        }
     }
 }
