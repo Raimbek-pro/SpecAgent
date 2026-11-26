@@ -16,7 +16,12 @@ public sealed class PostgresEventStore(NpgsqlDataSource db) : IEventStore
 
     public async Task EnsureSchemaAsync(CancellationToken ct = default)
     {
-        await using var cmd = db.CreateCommand("""
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        await using (var lockCmd = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtext('specagent:schema_migrations'))", conn, tx))
+            await lockCmd.ExecuteNonQueryAsync(ct);
+
+        await using (var cmd = new NpgsqlCommand("""
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 version    text        PRIMARY KEY,
                 applied_at timestamptz NOT NULL DEFAULT now()
@@ -55,8 +60,10 @@ public sealed class PostgresEventStore(NpgsqlDataSource db) : IEventStore
             INSERT INTO schema_migrations (version)
             VALUES ('001_init_audit_store')
             ON CONFLICT (version) DO NOTHING;
-            """);
-        await cmd.ExecuteNonQueryAsync(ct);
+            """, conn, tx))
+            await cmd.ExecuteNonQueryAsync(ct);
+
+        await tx.CommitAsync(ct);
     }
 
     public async Task<AuditEvent> AppendAsync(string sessionId, string type, string agent, string message,

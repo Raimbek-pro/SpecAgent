@@ -51,7 +51,12 @@ public sealed partial class PostgresPiiVault : IPiiVault
 
     public async Task EnsureSchemaAsync(CancellationToken ct = default)
     {
-        await using var cmd = _db.CreateCommand("""
+        await using var conn = await _db.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        await using (var lockCmd = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtext('specagent:schema_migrations'))", conn, tx))
+            await lockCmd.ExecuteNonQueryAsync(ct);
+
+        await using (var cmd = new NpgsqlCommand("""
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 version    text        PRIMARY KEY,
                 applied_at timestamptz NOT NULL DEFAULT now()
@@ -77,8 +82,10 @@ public sealed partial class PostgresPiiVault : IPiiVault
             INSERT INTO schema_migrations (version)
             VALUES ('003_pii_vault_and_settings')
             ON CONFLICT (version) DO NOTHING;
-            """);
-        await cmd.ExecuteNonQueryAsync(ct);
+            """, conn, tx))
+            await cmd.ExecuteNonQueryAsync(ct);
+
+        await tx.CommitAsync(ct);
     }
 
     public string Tokenize(string sessionId, string kind, string value)
