@@ -189,11 +189,18 @@ public sealed class AuditOrchestrator(
         var profile = CriticAgent.Profiles.FirstOrDefault(p => p.Name.Equals(critic, StringComparison.OrdinalIgnoreCase))
                       ?? throw new ArgumentException($"Unknown agent '@{critic}'. Use one of: {string.Join(", ", CriticNames.AllLlm)}");
 
-        await events.AppendAsync(sessionId, EventTypes.HumanQuestion, "analyst", $"@{critic} [{sectionId}] {question}", ct: ct);
+        var history = state.ChatsBySection.TryGetValue(sectionId, out var existing)
+            ? existing.TakeLast(10).ToList()
+            : [];
+
+        await events.AppendAsync(sessionId, EventTypes.HumanQuestion, "analyst", $"@{profile.Name} [{sectionId}] {question}",
+            new ChatMessagePayload(sectionId, profile.Name, question), ct);
         var secFindings = state.Judged?.Findings.Where(f => f.SectionId == sectionId).ToList();
         var secPatch = state.Patches?.LastOrDefault(p => p.SectionId == sectionId);
-        var answer = await new CriticAgent(profile, llm, prompts, tools).AskAsync(doc, sectionId, question, ct, sessionId, secFindings, secPatch);
-        await events.AppendAsync(sessionId, EventTypes.AgentAnswer, profile.Name, answer.Answer, answer, ct);
+        var answer = await new CriticAgent(profile, llm, prompts, tools).AskAsync(
+            doc, sectionId, question, ct, sessionId, secFindings, secPatch, history);
+        await events.AppendAsync(sessionId, EventTypes.AgentAnswer, profile.Name, answer.Answer,
+            new ChatMessagePayload(sectionId, profile.Name, answer.Answer), ct);
         return answer;
     }
 }

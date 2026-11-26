@@ -170,7 +170,8 @@ dotnet test --nologo
 | `GET` | `/api/audits/{id}` | Final audit report JSON (`findings`, `patches`, `qualityScore`) |
 | `POST` | `/api/audits/{id}/cancel` | Cancel an active, queued, or stuck audit session (`RUN_CANCELLED`) |
 | `POST` | `/api/audits/{id}/resume` | Resume a failed or cancelled audit session from its last saved step |
-| `POST` | `/api/audits/{id}/ask` | Human-in-the-loop `@agent` Q&A on a specific section |
+| `POST` | `/api/audits/{id}/ask` | Human-in-the-loop multi-turn `@agent` Q&A on a specific section |
+| `GET` | `/api/audits/{id}/chat` | Persistent per-section `@agent` chat history (demasked) |
 | `GET` | `/api/audits/{id}/export/report.md` | Download official Markdown audit report |
 | `GET` | `/api/audits/{id}/export/fixed.md` | Download clean patched Markdown specification |
 | `GET` | `/api/audits/{id}/export/fixed.pdf` | View/download (`?download=1`) clean patched PDF |

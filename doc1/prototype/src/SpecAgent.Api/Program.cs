@@ -299,16 +299,47 @@ api.MapGet("/{id}/findings/{findingId}/trace", async (string id, string findingI
     return Results.Ok(new { finding.Id, finding.Rationale, finding.Agents, raw });
 });
 
-// 6. Human-in-the-loop: "@security проверь этот эндпоинт на IDOR".
+// 6. Human-in-the-loop: "@compliance проверь этот эндпоинт на IDOR" (multi-turn per-section chat).
 api.MapPost("/{id}/ask", async (string id, AskRequest req, AuditOrchestrator orchestrator, PiiMasker masker, CancellationToken ct) =>
 {
     try
     {
-        var answer = await orchestrator.AskAsync(id, req.Agent.TrimStart('@'), req.SectionId, masker.Mask(id, req.Question), ct);
-        return Results.Ok(answer with { Answer = masker.Demask(id, answer.Answer) });
+        var agent = req.Agent.TrimStart('@');
+        var answer = await orchestrator.AskAsync(id, agent, req.SectionId, masker.Mask(id, req.Question), ct);
+        var demasked = masker.Demask(id, answer.Answer);
+        return Results.Ok(new
+        {
+            agent = agent.ToLowerInvariant(),
+            sectionId = req.SectionId,
+            answer = demasked,
+            findings = answer.Findings,
+            at = DateTimeOffset.UtcNow,
+        });
     }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
-}).RequireRateLimiting(RateLimitPolicies.AgentAsk);
+    catch (ToolError ex) { return Results.NotFound(new { error = ex.Message }); }
+}).WithSummary("Ask a domain critic about a section (multi-turn chat)").RequireRateLimiting(RateLimitPolicies.AgentAsk);
+
+// 6b. Persistent per-section chat history (demasked) rebuilt from the session event log.
+api.MapGet("/{id}/chat", async (string id, IEventStore events, PiiMasker masker, CancellationToken ct) =>
+{
+    var log = await events.ReadAsync(id, ct: ct);
+    if (log.Count == 0) return Results.NotFound();
+    var state = AuditState.From(log);
+    var chats = state.ChatsBySection.ToDictionary(
+        kv => kv.Key,
+        kv => kv.Value.Select(m => new
+        {
+            seq = m.Seq,
+            at = m.At,
+            role = m.Role,
+            agent = m.Agent,
+            sectionId = m.SectionId,
+            text = masker.Demask(id, m.Text),
+        }).ToList(),
+        StringComparer.OrdinalIgnoreCase);
+    return Results.Ok(chats);
+}).WithSummary("Get persistent per-section @agent chat history");
 
 // 7. Manual wake(): re-enqueue a failed or cancelled session to continue from the last completed step.
 api.MapPost("/{id}/resume", async (string id, IEventStore events, AuditQueue queue, CancellationToken ct) =>

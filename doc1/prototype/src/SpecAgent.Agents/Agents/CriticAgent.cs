@@ -1,5 +1,6 @@
 using System.Text;
 using SpecAgent.Agents.Llm;
+using SpecAgent.Agents.Orchestration;
 using SpecAgent.Agents.Tools;
 using SpecAgent.Core.Documents;
 using SpecAgent.Core.Findings;
@@ -55,9 +56,10 @@ public sealed class CriticAgent(CriticProfile profile, ILlmClient llm, PromptLib
         return output.Findings.Select((f, i) => ToRaw(f, $"{Name}-{i + 1}")).ToList();
     }
 
-    /// <summary>Human-in-the-loop: "@compliance проверь этот эндпоинт на IDOR" with full audit & RAG context.</summary>
+    /// <summary>Human-in-the-loop: "@compliance проверь этот эндпоинт на IDOR" with full audit, RAG &amp; chat history context.</summary>
     public async Task<AskOutput> AskAsync(TzDocument doc, string sectionId, string question, CancellationToken ct,
-        string? sessionId = null, IReadOnlyList<Finding>? sectionFindings = null, Patch? sectionPatch = null)
+        string? sessionId = null, IReadOnlyList<Finding>? sectionFindings = null, Patch? sectionPatch = null,
+        IReadOnlyList<ChatMessage>? history = null)
     {
         var section = doc.Find(sectionId) ?? throw new ToolError($"Section '{sectionId}' not found");
         var sb = new StringBuilder();
@@ -83,6 +85,17 @@ public sealed class CriticAgent(CriticProfile profile, ILlmClient llm, PromptLib
         if (sectionPatch is not null && !string.IsNullOrWhiteSpace(sectionPatch.After))
         {
             sb.AppendLine("<applied_patch>").AppendLine(sectionPatch.After).AppendLine("</applied_patch>").AppendLine();
+        }
+
+        if (history is { Count: > 0 })
+        {
+            sb.AppendLine("<conversation_history>");
+            foreach (var msg in history.TakeLast(10))
+            {
+                var speaker = msg.Role == "user" ? $"user -> @{msg.Agent}" : $"@{msg.Agent}";
+                sb.AppendLine($"[{speaker}]: {msg.Text}");
+            }
+            sb.AppendLine("</conversation_history>").AppendLine();
         }
 
         sb.AppendLine("<analyst_question>").AppendLine(question).AppendLine("</analyst_question>");

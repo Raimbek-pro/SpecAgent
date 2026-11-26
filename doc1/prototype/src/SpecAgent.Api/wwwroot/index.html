@@ -534,8 +534,46 @@ input[type=file] { display: none; }
 .inline-details summary { font-weight: 600; cursor: pointer; color: var(--ink-2); }
 .inline-details pre { white-space: pre-wrap; margin: 6px 0 0; font: 11.5px/1.45 var(--mono); }
 
-.ask-box { margin-top: 8px; }
-.ask-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
+.ask-box {
+  margin-top: 10px; padding: 10px; border-radius: 7px;
+  background: var(--bg); border: 1px solid var(--border-soft);
+}
+.ask-box-head {
+  font-size: 11.5px; font-weight: 600; color: var(--mute);
+  margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;
+}
+.ask-thread {
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 280px; overflow-y: auto; margin-bottom: 8px; padding-right: 2px;
+}
+.ask-thread:empty { display: none; margin-bottom: 0; }
+.ask-msg {
+  padding: 7px 10px; border-radius: 7px; font-size: 12px; line-height: 1.5;
+  max-width: 92%; word-wrap: break-word;
+}
+.ask-msg.user {
+  align-self: flex-end; background: var(--accent); color: #fff;
+  border-bottom-right-radius: 2px;
+}
+.ask-msg.user .ask-msg-meta { color: rgba(255,255,255,.8); }
+.ask-msg.agent {
+  align-self: flex-start; background: var(--panel); color: var(--ink);
+  border: 1px solid var(--border-soft); border-bottom-left-radius: 2px;
+}
+.ask-msg.loading {
+  align-self: flex-start; display: flex; align-items: center; gap: 8px;
+  background: var(--accent-bg); color: var(--ink-2); border: 1px solid var(--border-soft);
+}
+.ask-msg.error {
+  align-self: flex-start; background: var(--critical-bg); color: var(--critical);
+}
+.ask-msg-meta {
+  font: 10.5px/1.2 var(--mono); color: var(--mute); margin-bottom: 3px;
+  display: flex; align-items: center; gap: 6px;
+}
+.ask-msg .md p:first-child { margin-top: 0; }
+.ask-msg .md p:last-child { margin-bottom: 0; }
+.ask-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
 .ask-chip {
   font: 11px/1 var(--mono); padding: 3px 7px; border-radius: 999px;
   border: 1px solid var(--border); background: var(--panel); color: var(--ink-2);
@@ -548,10 +586,6 @@ input[type=file] { display: none; }
 .ask input:disabled { opacity: .65; cursor: wait; }
 .ask button { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .ask button:disabled { opacity: .7; cursor: wait; }
-.ask-reply { margin-top: 6px; padding: 8px 10px; border-radius: 6px; background: var(--accent-bg); border: 1px solid var(--border-soft); font-size: 12px; line-height: 1.5; color: var(--ink); }
-.ask-reply.ask-loading { display: flex; align-items: center; gap: 8px; color: var(--ink-2); }
-.ask-reply.ask-error { background: var(--critical-bg); color: var(--critical); border-color: transparent; }
-.ask-reply .ask-q { font-size: 11.5px; color: var(--mute); margin-bottom: 4px; }
 .ask-spinner {
   display: inline-block; width: 12px; height: 12px; flex-shrink: 0;
   border: 2px solid var(--border); border-top-color: var(--accent);
@@ -1384,18 +1418,26 @@ function renderRightPane() {
           ${f.recommendation ? `<p><b>Как нужно:</b> ${esc(f.recommendation)}</p>` : ''}
           ${f.rationale ? `<p><b>Обоснование арбитра:</b> ${esc(f.rationale)}</p>` : ''}
           <div class="explain-meta">✓ Цитата подтверждена в ${esc(f.sectionId)}${f.standardRef ? ' · ' + esc(f.standardRef) : ''} · агенты: ${f.agents.map(esc).join(', ')}</div>
-          <div class="ask-box">
-            <div class="ask-chips">
-              <button type="button" class="ask-chip" data-tag="@compliance">@compliance</button>
-              <button type="button" class="ask-chip" data-tag="@distributed">@distributed</button>
-              <button type="button" class="ask-chip" data-tag="@logic">@logic</button>
-              <button type="button" class="ask-chip" data-tag="@qa">@qa</button>
-            </div>
-            <div class="ask"><input placeholder="@compliance спросить по разделу ${esc(s.id)}…" data-s="${esc(s.id)}"><button type="button" class="btn">Спросить</button></div>
-          </div>
         </div>
       </div>`;
     }).join('');
+
+    const secChat = (t.chats && t.chats[s.id]) ? t.chats[s.id] : [];
+    const threadHtml = secChat.map(renderChatBubble).join('');
+    const chatBoxHtml = `<div class="ask-box" data-s="${esc(s.id)}">
+      <div class="ask-box-head">
+        <span>Чат с критиками по разделу ${esc(s.id)}</span>
+        <span class="ask-count">${secChat.length ? `${secChat.length} сообщ.` : 'контекст + RAG'}</span>
+      </div>
+      <div class="ask-thread">${threadHtml}</div>
+      <div class="ask-chips">
+        <button type="button" class="ask-chip" data-tag="@compliance">@compliance</button>
+        <button type="button" class="ask-chip" data-tag="@distributed">@distributed</button>
+        <button type="button" class="ask-chip" data-tag="@logic">@logic</button>
+        <button type="button" class="ask-chip" data-tag="@qa">@qa</button>
+      </div>
+      <div class="ask"><input placeholder="@compliance спросить по разделу ${esc(s.id)}…" data-s="${esc(s.id)}"><button type="button" class="btn">Спросить</button></div>
+    </div>`;
 
     // Clean finished text shown directly in the document
     let cleanText = p ? p.after : (secFindings[0]?.recommendation ? `${s.text}\n\n> **Рекомендация SpecAgent:** ${secFindings[0].recommendation}` : s.text);
@@ -1413,12 +1455,15 @@ function renderRightPane() {
           <summary>Почему это проблема и доказательство (${esc(summaryLabel)})</summary>
           <div class="clean-expand-inner">
             ${calloutsHtml}
+            ${chatBoxHtml}
             ${(!includeGherkinInFixed && p?.gherkin) ? `<details class="inline-details"><summary>Критерии приёмки (Gherkin)</summary><pre>${esc(p.gherkin)}</pre></details>` : ''}
           </div>
         </details>
       </div>
     </div>`;
   }).join('');
+
+  out.querySelectorAll('.ask-thread').forEach(th => { th.scrollTop = th.scrollHeight; });
 
   out.querySelectorAll('.ask-chip').forEach(chip => chip.onclick = () => {
     const input = chip.closest('.ask-box').querySelector('.ask input');
@@ -1429,8 +1474,13 @@ function renderRightPane() {
   });
 
   out.querySelectorAll('.ask').forEach(row => {
+    const box = row.closest('.ask-box');
+    const thread = box.querySelector('.ask-thread');
+    const countEl = box.querySelector('.ask-count');
     const input = row.querySelector('input');
     const btn = row.querySelector('button');
+    const secId = input.dataset.s;
+
     const submitAsk = async () => {
       const raw = input.value.trim();
       if (!raw) { input.focus(); return; }
@@ -1440,43 +1490,72 @@ function renderRightPane() {
         input.focus();
         return;
       }
-      const agent = m[1], question = m[2].trim();
+      const agent = m[1].toLowerCase(), question = m[2].trim();
+      t.chats ??= {};
+      const list = (t.chats[secId] ??= []);
+
+      const userMsg = { role: 'user', agent, sectionId: secId, text: question, at: new Date().toISOString() };
+      list.push(userMsg);
+      thread.insertAdjacentHTML('beforeend', renderChatBubble(userMsg));
+      if (countEl) countEl.textContent = `${list.length} сообщ.`;
+
+      input.value = `@${agent} `;
       btn.disabled = true;
       input.disabled = true;
       btn.innerHTML = '<span class="ask-spinner"></span> Думает…';
 
-      const replyEl = document.createElement('div');
-      replyEl.className = 'ask-reply ask-loading';
-      replyEl.innerHTML = `<span class="ask-spinner"></span><span><b>@${esc(agent)}</b> анализирует раздел ${esc(input.dataset.s)} и базу знаний RAG…</span>`;
-      row.parentElement.appendChild(replyEl);
+      const loadingEl = document.createElement('div');
+      loadingEl.className = 'ask-msg loading';
+      loadingEl.innerHTML = `<span class="ask-spinner"></span><span><b>@${esc(agent)}</b> анализирует раздел ${esc(secId)}, историю диалога и RAG…</span>`;
+      thread.appendChild(loadingEl);
+      thread.scrollTop = thread.scrollHeight;
 
       try {
         const r = await fetch(`/api/audits/${t.sessionId}/ask`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ agent, sectionId: input.dataset.s, question })
+          body: JSON.stringify({ agent, sectionId: secId, question })
         });
         const a = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+        loadingEl.remove();
         if (!r.ok || a.error) {
-          replyEl.className = 'ask-reply ask-error';
-          replyEl.innerHTML = `<b>@${esc(agent)}:</b> ${esc(a.error || `Ошибка запроса (HTTP ${r.status})`)}`;
+          thread.insertAdjacentHTML('beforeend',
+            `<div class="ask-msg error"><b>@${esc(agent)}:</b> ${esc(a.error || `Ошибка запроса (HTTP ${r.status})`)}</div>`);
         } else {
-          replyEl.className = 'ask-reply';
-          replyEl.innerHTML = `<div class="ask-q">Вы → <b>@${esc(agent)}</b>: ${esc(question)}</div><div class="md">${renderMarkdown(a.answer || '', [])}</div>`;
-          input.value = `@${agent} `;
+          const agentMsg = { role: 'agent', agent: a.agent || agent, sectionId: secId, text: a.answer || '', at: a.at || new Date().toISOString() };
+          list.push(agentMsg);
+          thread.insertAdjacentHTML('beforeend', renderChatBubble(agentMsg));
+          if (countEl) countEl.textContent = `${list.length} сообщ.`;
         }
       } catch (err) {
-        replyEl.className = 'ask-reply ask-error';
-        replyEl.innerHTML = `<b>@${esc(agent)}:</b> Ошибка сети: ${esc(err?.message || 'не удалось получить ответ')}`;
+        loadingEl.remove();
+        thread.insertAdjacentHTML('beforeend',
+          `<div class="ask-msg error"><b>@${esc(agent)}:</b> Ошибка сети: ${esc(err?.message || 'не удалось получить ответ')}</div>`);
       } finally {
+        thread.scrollTop = thread.scrollHeight;
         btn.disabled = false;
         input.disabled = false;
         btn.textContent = 'Спросить';
+        input.focus();
       }
     };
     btn.onclick = submitAsk;
     input.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); submitAsk(); } };
   });
+}
+
+function renderChatBubble(m) {
+  const tm = m.at ? new Date(m.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+  if (m.role === 'user') {
+    return `<div class="ask-msg user">
+      <div class="ask-msg-meta"><span>Вы → @${esc(m.agent)}</span>${tm ? `<span>${esc(tm)}</span>` : ''}</div>
+      <div>${esc(m.text)}</div>
+    </div>`;
+  }
+  return `<div class="ask-msg agent">
+    <div class="ask-msg-meta"><span>@${esc(m.agent)}</span>${tm ? `<span>${esc(tm)}</span>` : ''}</div>
+    <div class="md">${renderMarkdown(m.text || '', [])}</div>
+  </div>`;
 }
 
 function updateTopAndStatus(t) {
@@ -1655,6 +1734,10 @@ async function resumeSessionOnTab(t, btn) {
 
 async function fetchTabReport(t) {
   const j = await (await fetch(`/api/audits/${t.sessionId}`)).json();
+  try {
+    const chatRes = await fetch(`/api/audits/${t.sessionId}/chat`);
+    if (chatRes.ok) t.chats = await chatRes.json();
+  } catch { /* ignore chat load error */ }
   if (j.status !== 'done') {
     t.running = j.status === 'running';
     t.cancelled = j.status === 'cancelled';
