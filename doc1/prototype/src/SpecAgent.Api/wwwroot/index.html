@@ -238,16 +238,20 @@ input[type=file] { display: none; }
 }
 .tab-add:hover { background: rgba(255,255,255,0.7); color: var(--accent); }
 
-/* Right Pane File Header (Clean single active file bar — no 4 confusing tabs!) */
-.right-filebar {
-  height: 34px; display: flex; align-items: center; justify-content: space-between;
-  padding: 0 14px; background: var(--chrome); border-bottom: 1px solid var(--border);
-  flex-shrink: 0; user-select: none;
+/* Right Pane Tab Bar (matches Left Zed .tabbar 1-to-1) */
+.right-tabbar {
+  height: 34px; display: flex; align-items: stretch; justify-content: space-between;
+  background: var(--chrome); border-bottom: 1px solid var(--border);
+  flex-shrink: 0; user-select: none; overflow-x: auto;
 }
-.right-filename {
-  display: inline-flex; align-items: center; gap: 8px;
-  font: 600 12.5px/1 var(--mono); color: var(--ink);
+.right-tabs { display: flex; align-items: stretch; }
+.right-dl-tab {
+  display: none; align-items: center; gap: 6px; padding: 0 13px; margin-left: auto;
+  font: 600 12px/1 var(--sans); color: var(--ink); background: transparent;
+  border: 0; border-left: 1px solid var(--border); text-decoration: none; white-space: nowrap; flex-shrink: 0;
+  cursor: pointer; transition: background 0.12s;
 }
+.right-dl-tab:hover { background: #ffffff; color: var(--accent); }
 .right-quick { display: inline-flex; align-items: center; gap: 4px; }
 .qbtn {
   height: 22px; padding: 0 8px; border-radius: 4px; border: 1px solid transparent;
@@ -498,13 +502,14 @@ mark.on { background: #fff0f0; border-radius: 3px; }
 .agent-pill.ok  { background: var(--ok-bg); border-color: #aceebb; color: var(--ok); }
 
 /* Trace log */
-.trace-list { list-style: none; padding: 0; margin: 0; font: 12px/1.45 var(--mono); }
-.trace-list li { display: grid; grid-template-columns: 54px 165px 1fr; gap: 8px; padding: 5px 4px; border-bottom: 1px solid var(--border-soft); align-items: baseline; }
-.trace-tm { color: var(--mute); }
-.trace-ev { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trace-list { list-style: none; padding: 0; margin: 0; font: 12.5px/1.5 var(--sans); }
+.trace-list li { display: grid; grid-template-columns: 56px 210px 1fr; gap: 10px; padding: 7px 6px; border-bottom: 1px solid var(--border-soft); align-items: baseline; }
+.trace-tm { color: var(--mute); font: 500 11.5px/1.4 var(--mono); }
+.trace-ev { font: 600 12px/1.35 var(--sans); color: var(--ink); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.trace-agent { font: 600 10.5px/1 var(--mono); padding: 2px 5px; border-radius: 3px; background: var(--chrome); color: var(--ink-2); }
 .trace-ev.ok  { color: var(--ok); }
 .trace-ev.err { color: var(--blocker); }
-.trace-msg { color: var(--ink-2); word-break: break-word; font-family: var(--sans); }
+.trace-msg { color: var(--ink-2); word-break: break-word; }
 
 /* Status bar */
 .statusbar {
@@ -568,17 +573,17 @@ mark.on { background: #fff0f0; border-radius: 3px; }
 
   <div class="resizer" id="resizer"></div>
 
-  <!-- RIGHT PANE: GENERATED OUTPUT FILE (fixed by default | report.md | audit.log via sidebar) -->
+  <!-- RIGHT PANE: GENERATED OUTPUT FILE (exact Zed tabbar style matching Left Pane) -->
   <aside class="pane pane-right">
-    <div class="right-filebar">
-      <div style="display:flex;align-items:center;gap:10px;min-width:0">
-        <span class="right-filename" id="right-filename">fixed.md</span>
-        <div class="view-switch" id="right-view-switch" style="display:none">
-          <button type="button" data-rmode="audit" class="active">Разбор правок</button>
-          <button type="button" data-rmode="clean" id="right-clean-btn">Чистый файл</button>
-        </div>
+    <div class="right-tabbar">
+      <div class="right-tabs" id="right-view-switch" style="display:none">
+        <button type="button" class="tab active" data-rmode="audit">Разбор правок</button>
+        <button type="button" class="tab" data-rmode="clean" id="right-clean-btn">Чистый файл</button>
+        <button type="button" class="tab" data-rmode="report">Отчёт</button>
+        <button type="button" class="tab" data-rmode="log">Логи</button>
       </div>
-      <a id="right-dl" class="btn ok" style="display:none;height:24px;font-size:11.5px;padding:0 9px" download>↓ скачать</a>
+      <span class="tab active" id="right-filename" style="cursor:default">Предпросмотр</span>
+      <a id="right-dl" class="right-dl-tab" download>↓ Скачать</a>
     </div>
     <div class="crumbbar">
       <span id="right-crumb">Исправленная версия + все замечания</span>
@@ -743,8 +748,12 @@ $$('#left-view-switch button').forEach(btn => btn.onclick = () => {
 });
 $$('#right-view-switch button').forEach(btn => btn.onclick = () => {
   const t = activeTab(); if (!t) return;
-  t.rightMode = btn.dataset.rmode;
+  const m = btn.dataset.rmode;
+  if (m === 'report') { t.rightFile = 'report'; }
+  else if (m === 'log') { t.rightFile = 'log'; }
+  else { t.rightFile = 'fixed'; t.rightMode = m; }
   renderRightPane();
+  renderHistorySidebar();
 });
 
 // Resizable split divider
@@ -1026,6 +1035,37 @@ function renderStagesView(t, traceHtml) {
     </details>`;
 }
 
+const eventLabels = {
+  TZ_INGESTED: 'Парсинг и PII',
+  RUN_STARTED: 'Старт аудита',
+  RESUMED: 'Возобновление',
+  ROUTED: 'Маршрутизация',
+  CRITIC_STARTED: 'Запуск агента',
+  TOOL_CALLED: 'Поиск в RAG',
+  FINDINGS: 'Замечания агента',
+  GROUNDED: 'Проверка цитат',
+  JUDGED: 'Вердикт арбитра',
+  PATCH_DRAFTED: 'Черновик правки',
+  PATCH_VERIFIED: 'Верификация правки',
+  PATCHES: 'Правки готовы',
+  REPORT_READY: 'Отчёт готов',
+  RUN_FAILED: 'Ошибка аудита',
+  CRITIC_FAILED: 'Сбой агента',
+};
+
+function formatTraceMessage(row) {
+  const msg = row.message || '';
+  if (row.type === 'TZ_INGESTED') {
+    const m = msg.match(/(\d+)\s+sections?,\s*(\d+)\s+PII/i);
+    if (m) return `Разобрано ${m[1]} секций · замаскировано ${m[2]} PII-значений до отправки в LLM`;
+  }
+  if (row.type === 'GROUNDED') {
+    const m = msg.match(/(\d+)\s+of\s+(\d+)/i);
+    if (m) return `Подтверждено ${m[1]} из ${m[2]} цитат в тексте документа`;
+  }
+  return msg;
+}
+
 function renderRightPane() {
   const t = activeTab();
   const out = $('#right-scroll');
@@ -1033,19 +1073,26 @@ function renderRightPane() {
 
   const baseName = (t.doc?.sourceFileName || t.title || 'spec').replace(/\.[^.]+$/, '');
   const traceHtml = t.trace.length ? t.trace.map(row => {
-    const cls = row.type.includes('FAIL') ? 'err' : (row.type === 'REPORT_READY' || row.type === 'PATCH_VERIFIED' || row.type === 'JUDGED') ? 'ok' : '';
-    return `<li><span class="trace-tm">+${row.dt}s</span><span class="trace-ev ${cls}">${esc(row.agent)}·${esc(row.type)}</span><span class="trace-msg">${esc(row.message)}</span></li>`;
+    const cls = row.type.includes('FAIL') ? 'err' : (row.type === 'REPORT_READY' || row.type === 'PATCH_VERIFIED' || row.type === 'JUDGED' || row.type === 'TZ_INGESTED') ? 'ok' : '';
+    const label = eventLabels[row.type] || row.type;
+    return `<li>
+      <span class="trace-tm">+${row.dt}s</span>
+      <span class="trace-ev ${cls}"><span class="trace-agent">${esc(row.agent)}</span> ${esc(label)}</span>
+      <span class="trace-msg">${esc(formatTraceMessage(row))}</span>
+    </li>`;
   }).join('') : '<li class="empty" style="display:block">Ожидание запуска аудита…</li>';
 
   const dl = $('#right-dl');
   const rsw = $('#right-view-switch');
+  const rfn = $('#right-filename');
   out.classList.remove('flush');
   dl.style.display = 'none';
   rsw.style.display = 'none';
+  rfn.style.display = 'inline-flex';
 
   // While running → show clear 5-stage visual pipeline + collapsible raw log!
   if (t.running && !t.report) {
-    $('#right-filename').textContent = `${baseName} — аудит выполняется…`;
+    rfn.textContent = `${baseName} — аудит выполняется…`;
     $('#right-crumb').textContent = `Агенты работают в реальном времени (${t.trace.length} событий)`;
     $('#right-meta').textContent = '';
     out.innerHTML = renderStagesView(t, traceHtml);
@@ -1053,52 +1100,50 @@ function renderRightPane() {
   }
 
   if (!t.report) {
-    $('#right-filename').textContent = 'Предпросмотр';
+    rfn.textContent = 'Предпросмотр';
     $('#right-crumb').textContent = 'Нажмите «▶ Проверить ТЗ» слева или выберите проект в панели SpecAgent ☰';
     $('#right-meta').textContent = '';
-    out.innerHTML = '<p class="empty">После проверки здесь появится исправленное ТЗ со всеми замечаниями, а в левой панели <b>SpecAgent ☰</b> — все сгенерированные файлы (<code>fixed.md</code>, <code>report.md</code>, <code>audit.log</code>).</p>';
+    out.innerHTML = '<p class="empty">После проверки здесь появится исправленное ТЗ со всеми замечаниями, а в левой панели <b>SpecAgent ☰</b> — все сгенерированные файлы (<code>fixed</code>, <code>report.md</code>, <code>audit.log</code>).</p>';
     return;
   }
 
   const rep = t.report;
+  const ext = docExt(t);
+  const activeRMode = t.rightFile === 'report' ? 'report' : t.rightFile === 'log' ? 'log' : (t.rightMode || 'audit');
+  rfn.style.display = 'none';
+  rsw.style.display = 'flex';
+  $('#right-clean-btn').textContent = ext === '.pdf' ? 'Чистый PDF' : ext === '.docx' ? 'Чистый DOCX' : 'Чистый документ';
+  rsw.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.rmode === activeRMode));
 
-  // Mode A: audit.log selected from Xcode sidebar
+  // Mode A: audit.log
   if (t.rightFile === 'log') {
-    $('#right-filename').textContent = `${baseName}-audit.log`;
-    $('#right-crumb').textContent = `Этапы и журнал работы агентов (${t.trace.length} событий · PostgreSQL Event Log)`;
+    $('#right-crumb').textContent = `${baseName}-audit.log · Этапы и журнал работы агентов (${t.trace.length} событий)`;
     $('#right-meta').textContent = '';
     out.innerHTML = renderStagesView(t, traceHtml);
     return;
   }
 
-  // Mode B: report.md selected from Xcode sidebar
+  // Mode B: report.md
   if (t.rightFile === 'report') {
     const reportFile = `${baseName}-report.md`;
-    $('#right-filename').textContent = reportFile;
-    $('#right-crumb').textContent = 'Официальный отчёт аудита для сдачи (ISO/IEC/IEEE 29148)';
+    $('#right-crumb').textContent = `${reportFile} · Официальный отчёт аудита (ISO/IEC/IEEE 29148)`;
     $('#right-meta').textContent = '';
     dl.href = `/api/audits/${t.sessionId}/export/report.md`;
     dl.setAttribute('download', reportFile);
     dl.textContent = `↓ ${reportFile}`;
-    dl.className = 'btn accent';
+    dl.title = `Скачать ${reportFile}`;
     dl.style.display = 'inline-flex';
     out.innerHTML = `<div class="md">${t.reportMd ? renderMarkdown(t.reportMd, []) : '<p class="empty">Загрузка…</p>'}</div>`;
     return;
   }
 
-  // Mode C (DEFAULT): Fixed document in original format (.pdf / .docx / .md) + 2 tabs: Разбор правок | Чистый файл
-  const ext = docExt(t);
+  // Mode C (DEFAULT): Fixed document in original format (.pdf / .docx / .md)
   const rMode = t.rightMode || 'audit';
   const fixedFile = `${baseName}-fixed${ext}`;
-  $('#right-filename').textContent = fixedFile;
   $('#right-crumb').textContent = rMode === 'clean'
-    ? `Чистый готовый документ (${fixedFile}) без пометок аудита`
-    : `Исправленная версия + все замечания (${rep.findings.length} замечаний, ${rep.patches.length} автоисправлений)`;
+    ? `${fixedFile} · Чистый готовый документ без пометок аудита`
+    : `${fixedFile} · ${rep.findings.length} замечаний, ${rep.patches.length} автоисправлений`;
   $('#right-meta').textContent = '';
-
-  rsw.style.display = 'inline-flex';
-  $('#right-clean-btn').textContent = ext === '.pdf' ? 'Чистый PDF' : ext === '.docx' ? 'Чистый DOCX' : 'Чистый документ';
-  rsw.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.rmode === rMode));
 
   const dlUrl = ext === '.pdf'
     ? `/api/audits/${t.sessionId}/export/fixed.pdf?download=1`
@@ -1108,7 +1153,7 @@ function renderRightPane() {
   dl.href = dlUrl;
   dl.setAttribute('download', fixedFile);
   dl.textContent = `↓ ${fixedFile}`;
-  dl.className = 'btn ok';
+  dl.title = `Скачать ${fixedFile}`;
   dl.style.display = 'inline-flex';
 
   const patchesBySection = Object.fromEntries(rep.patches.map(p => [p.sectionId, p]));
