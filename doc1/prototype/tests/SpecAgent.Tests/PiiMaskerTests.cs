@@ -44,4 +44,39 @@ public class PiiMaskerTests
         const string text = "Лимит 100000000000 тенге, заказ 1234567890123";
         Assert.Equal(text, Masker.Mask("s1", text));
     }
+
+    [Theory]
+    [InlineData("+1 (415) 555-0199")]
+    [InlineData("+44 20 7946 0958")]
+    [InlineData("+998 90 123 45 67")]
+    [InlineData("+7 (701) 123-45-67")]
+    [InlineData("8-777-123-45-67")]
+    public void Masks_international_and_cis_phone_numbers_and_round_trips(string phone)
+    {
+        var input = $"Контакт клиента: {phone} (основной)";
+        var masked = Masker.Mask("s-intl", input);
+
+        Assert.DoesNotContain(phone, masked);
+        Assert.Contains("[PHONE_1]", masked);
+        Assert.Equal(input, Masker.Demask("s-intl", masked));
+    }
+
+    [Fact]
+    public void Masks_labeled_synthetic_iin_and_respects_enabled_kinds_toggle()
+    {
+        var masker = Masker;
+        const string text = "ИИН тестового клиента: 950115350123, тел. +7 701 555 44 33";
+
+        var maskedAll = masker.Mask("s-labeled", text);
+        Assert.DoesNotContain("950115350123", maskedAll);
+        Assert.Contains("[IIN_1]", maskedAll);
+        Assert.Contains("[PHONE_1]", maskedAll);
+        Assert.Equal(text, masker.Demask("s-labeled", maskedAll));
+
+        // Disabling PHONE keeps phone unmasked while still masking labeled IIN.
+        masker.EnabledKinds = new HashSet<string>(["IIN"], StringComparer.OrdinalIgnoreCase);
+        var maskedIinOnly = masker.Mask("s-iin-only", text);
+        Assert.Contains("[IIN_1]", maskedIinOnly);
+        Assert.Contains("+7 701 555 44 33", maskedIinOnly);
+    }
 }

@@ -20,19 +20,52 @@ namespace SpecAgent.Api.Export;
 /// </summary>
 public static partial class DocumentExporter
 {
+    private static readonly string PdfFontFamily;
+
     static DocumentExporter()
     {
         QuestPDF.Settings.License = LicenseType.Community;
-        QuestPDF.Settings.CheckIfAllTextGlyphsAreAvailable = false;
-        const string fontDir = "/usr/share/fonts/truetype/dejavu";
-        if (Directory.Exists(fontDir))
+        QuestPDF.Settings.ThrowOnMissingTextGlyphs = false;
+        QuestPDF.Settings.ThrowOnMissingFontFamilies = false;
+
+        const string linuxDejaVuDir = "/usr/share/fonts/truetype/dejavu";
+        if (Directory.Exists(linuxDejaVuDir))
         {
-            foreach (var ttf in Directory.EnumerateFiles(fontDir, "*.ttf"))
+            foreach (var ttf in Directory.EnumerateFiles(linuxDejaVuDir, "*.ttf"))
             {
                 using var fs = File.OpenRead(ttf);
-                QuestPDF.Drawing.FontManager.RegisterFont(fs);
+                QuestPDF.Drawing.FontManager.RegisterFontFromStream(fs);
+            }
+            PdfFontFamily = "DejaVu Sans";
+            return;
+        }
+
+        // Cross-platform fallback for local Windows / macOS runs outside Docker.
+        (string Family, string[] Files)[] fallbacks =
+        [
+            ("Arial", [@"C:\Windows\Fonts\arial.ttf", @"C:\Windows\Fonts\arialbd.ttf", @"C:\Windows\Fonts\ariali.ttf"]),
+            ("Segoe UI", [@"C:\Windows\Fonts\segoeui.ttf", @"C:\Windows\Fonts\segoeuib.ttf"]),
+            ("Arial", ["/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Arial Bold.ttf"]),
+        ];
+
+        foreach (var (family, files) in fallbacks)
+        {
+            var registered = 0;
+            foreach (var path in files)
+            {
+                if (!File.Exists(path)) continue;
+                using var fs = File.OpenRead(path);
+                QuestPDF.Drawing.FontManager.RegisterFontFromStream(fs);
+                registered++;
+            }
+            if (registered > 0)
+            {
+                PdfFontFamily = family;
+                return;
             }
         }
+
+        PdfFontFamily = "Lato";
     }
 
     [GeneratedRegex(@"^[-*•]\s+")] private static partial Regex BulletPrefix();
@@ -81,7 +114,7 @@ public static partial class DocumentExporter
                 page.Size(PageSizes.A4);
                 page.MarginVertical(18, Unit.Millimetre);
                 page.MarginHorizontal(16, Unit.Millimetre);
-                page.DefaultTextStyle(x => x.FontFamily("DejaVu Sans").FontSize(10).FontColor("#1F2328").LineHeight(1.4f));
+                page.DefaultTextStyle(x => x.FontFamily(PdfFontFamily).FontSize(10).FontColor("#1F2328").LineHeight(1.4f));
 
                 page.Content().Column(col =>
                 {

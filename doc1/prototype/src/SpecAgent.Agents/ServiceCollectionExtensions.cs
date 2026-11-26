@@ -9,6 +9,7 @@ using SpecAgent.Agents.Knowledge;
 using SpecAgent.Agents.Llm;
 using SpecAgent.Agents.Orchestration;
 using SpecAgent.Agents.Storage;
+using SpecAgent.Agents.Telemetry;
 using SpecAgent.Agents.Tools;
 using SpecAgent.Core.Events;
 using SpecAgent.Ingestion.Pii;
@@ -33,6 +34,8 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<IAdminAuditLog>(sp => sp.GetRequiredService<PostgresAdminAuditLog>());
             services.AddSingleton<PostgresSystemSettingsStore>();
             services.AddSingleton<ISystemSettingsStore>(sp => sp.GetRequiredService<PostgresSystemSettingsStore>());
+            services.AddSingleton<PostgresSessionUsageStore>();
+            services.AddSingleton<ISessionUsageStore>(sp => sp.GetRequiredService<PostgresSessionUsageStore>());
 
             var vaultKey = config["PiiVault:Key"] ?? config["PII_VAULT_KEY"] ?? Environment.GetEnvironmentVariable("PII_VAULT_KEY");
             var ttlDays = int.TryParse(config["PiiVault:TtlDays"], out var days) ? days : 30;
@@ -49,7 +52,10 @@ public static class ServiceCollectionExtensions
             services.AddSingleton<IEventStore, InMemoryEventStore>();
             services.AddSingleton<IAdminAuditLog, InMemoryAdminAuditLog>();
             services.AddSingleton<ISystemSettingsStore, InMemorySystemSettingsStore>();
+            services.AddSingleton<ISessionUsageStore, InMemorySessionUsageStore>();
         }
+
+        services.AddSingleton<SpecAgentMetrics>();
 
         var kbPath = config["Knowledge:Path"] ?? "knowledge";
         if (!Path.IsPathRooted(kbPath)) kbPath = Path.GetFullPath(Path.Combine(contentRoot, kbPath));

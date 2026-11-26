@@ -138,8 +138,9 @@ dotnet test --nologo
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/health` | Service health check (anonymous) |
+| `GET` | `/metrics` | Prometheus metrics (`specagent_audits_*`, `specagent_llm_tokens_*`, `specagent_llm_cost_usd_total`) |
 | `GET` | `/api/me` | Authenticated user identity, role (`admin`/`analyst`), and auth mode (`jwt`/`demo`) |
-| `GET` | `/api/audits/recent` | List recent PostgreSQL audit sessions (0 tokens) |
+| `GET` | `/api/audits/recent` | List recent PostgreSQL audit sessions with score, token usage & estimated USD cost |
 | `POST` | `/api/audits` | Upload `.pdf`, `.docx`, `.md`, or `.txt` to start an audit |
 | `GET` | `/api/audits/{id}/events` | Live Server-Sent Events (SSE) execution trace |
 | `GET` | `/api/audits/{id}/document` | Demasked parsed document sections |

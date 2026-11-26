@@ -3,6 +3,7 @@ using Anthropic;
 using Anthropic.Models.Beta.Messages;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SpecAgent.Agents.Telemetry;
 
 namespace SpecAgent.Agents.Llm;
 
@@ -15,7 +16,9 @@ namespace SpecAgent.Agents.Llm;
 public sealed class ClaudeLlmClient(
     AnthropicClient client,
     IOptions<ModelRoutingOptions> routing,
-    ILogger<ClaudeLlmClient> logger) : ILlmClient
+    ILogger<ClaudeLlmClient> logger,
+    ISessionUsageStore? usageStore = null,
+    SpecAgentMetrics? metrics = null) : ILlmClient
 {
     private const string FallbackBeta = "server-side-fallback-2026-07-01";
 
@@ -50,9 +53,17 @@ public sealed class ClaudeLlmClient(
             throw new LlmException($"{call.Agent}: Claude API call failed ({route.Model}): {ex.Message}", ex);
         }
 
-        logger.LogInformation("{Agent} → {Model} in {Ms} ms, in={In} out={Out} stop={Stop}",
-            call.Agent, route.Model, (int)(DateTime.UtcNow - started).TotalMilliseconds,
-            response.Usage.InputTokens, response.Usage.OutputTokens, response.StopReason);
+        var elapsedMs = (int)(DateTime.UtcNow - started).TotalMilliseconds;
+        var inTok = response.Usage.InputTokens;
+        var outTok = response.Usage.OutputTokens;
+        var costUsd = ModelPricing.EstimateCostUsd(route.Model, inTok, outTok);
+
+        logger.LogInformation("{Agent} → {Model} in {Ms} ms, in={In} out={Out} cost=${Cost:F6} stop={Stop}",
+            call.Agent, route.Model, elapsedMs, inTok, outTok, costUsd, response.StopReason);
+
+        metrics?.RecordLlmCall(call.Agent, route.Model, success: response.StopReason != "refusal", inTok, outTok, costUsd, elapsedMs);
+        if (usageStore is not null && AuditTelemetryContext.CurrentSessionId is { } sid)
+            await usageStore.RecordUsageAsync(sid, call.Agent, route.Model, inTok, outTok, costUsd, elapsedMs, ct);
 
         if (response.StopReason == "refusal")
             throw new LlmException($"{call.Agent}: model declined the request ({response.StopDetails?.Category})");

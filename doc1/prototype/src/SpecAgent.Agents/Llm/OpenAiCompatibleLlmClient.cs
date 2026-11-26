@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using OpenAI;
 using OpenAI.Chat;
+using SpecAgent.Agents.Telemetry;
 
 namespace SpecAgent.Agents.Llm;
 
@@ -17,6 +18,8 @@ public sealed class OpenAiCompatibleLlmClient : ILlmClient
     private readonly IConfiguration _config;
     private readonly IOptions<ModelRoutingOptions> _routing;
     private readonly ILogger<OpenAiCompatibleLlmClient> _logger;
+    private readonly ISessionUsageStore? _usageStore;
+    private readonly SpecAgentMetrics? _metrics;
     private readonly SemaphoreSlim _concurrencyGate;
     private readonly object _paceLock = new();
     private DateTime _lastCallUtc = DateTime.MinValue;
@@ -24,11 +27,15 @@ public sealed class OpenAiCompatibleLlmClient : ILlmClient
     public OpenAiCompatibleLlmClient(
         IConfiguration config,
         IOptions<ModelRoutingOptions> routing,
-        ILogger<OpenAiCompatibleLlmClient> logger)
+        ILogger<OpenAiCompatibleLlmClient> logger,
+        ISessionUsageStore? usageStore = null,
+        SpecAgentMetrics? metrics = null)
     {
         _config = config;
         _routing = routing;
         _logger = logger;
+        _usageStore = usageStore;
+        _metrics = metrics;
         var maxConcurrency = int.TryParse(config["Llm:MaxConcurrency"], out var c) && c > 0 ? c : 3;
         _concurrencyGate = new SemaphoreSlim(maxConcurrency, maxConcurrency);
     }
@@ -101,9 +108,17 @@ public sealed class OpenAiCompatibleLlmClient : ILlmClient
 
                     var text = completion.Content.FirstOrDefault()?.Text ?? "";
                     var usage = completion.Usage;
-                    _logger.LogInformation("{Agent} -> {Model} in {Ms} ms, in={In} out={Out}",
-                        call.Agent, model, (int)(DateTime.UtcNow - started).TotalMilliseconds,
-                        usage?.InputTokenCount ?? 0, usage?.OutputTokenCount ?? 0);
+                    var elapsedMs = (int)(DateTime.UtcNow - started).TotalMilliseconds;
+                    var inTok = usage?.InputTokenCount ?? 0;
+                    var outTok = usage?.OutputTokenCount ?? 0;
+                    var costUsd = ModelPricing.EstimateCostUsd(model, inTok, outTok);
+
+                    _logger.LogInformation("{Agent} -> {Model} in {Ms} ms, in={In} out={Out} cost=${Cost:F6}",
+                        call.Agent, model, elapsedMs, inTok, outTok, costUsd);
+
+                    _metrics?.RecordLlmCall(call.Agent, model, success: true, inTok, outTok, costUsd, elapsedMs);
+                    if (_usageStore is not null && AuditTelemetryContext.CurrentSessionId is { } sid)
+                        await _usageStore.RecordUsageAsync(sid, call.Agent, model, inTok, outTok, costUsd, elapsedMs, ct);
 
                     return StrictJsonSchema.Deserialize<T>(text);
                 }

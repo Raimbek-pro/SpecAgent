@@ -10,6 +10,7 @@ using SpecAgent.Agents.Knowledge;
 using SpecAgent.Agents.Llm;
 using SpecAgent.Agents.Orchestration;
 using SpecAgent.Agents.Storage;
+using SpecAgent.Agents.Telemetry;
 using SpecAgent.Agents.Tools;
 using SpecAgent.Api.Auth;
 using SpecAgent.Api.Cli;
@@ -73,6 +74,7 @@ if (app.Services.GetService<PostgresEventStore>() is { } pg) await pg.EnsureSche
 if (app.Services.GetService<PostgresAdminAuditLog>() is { } adminLog) await adminLog.EnsureSchemaAsync();
 if (app.Services.GetService<PostgresPiiVault>() is { } piiVault) await piiVault.EnsureSchemaAsync();
 if (app.Services.GetService<PostgresSystemSettingsStore>() is { } pgSettings) await pgSettings.EnsureSchemaAsync();
+if (app.Services.GetService<PostgresSessionUsageStore>() is { } pgUsage) await pgUsage.EnsureSchemaAsync();
 
 // Hydrate runtime settings from durable storage so Admin changes survive restarts/replicas.
 if (await app.Services.GetRequiredService<ISystemSettingsStore>().LoadAsync() is { } persisted)
@@ -94,6 +96,9 @@ app.UseRateLimiter();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 
+app.MapGet("/metrics", (SpecAgentMetrics metrics) =>
+    Results.Text(metrics.RenderPrometheus(), "text/plain; version=0.0.4; charset=utf-8")).AllowAnonymous();
+
 app.MapGet("/api/me", (ClaimsPrincipal user, AuthOptions authOpts) =>
 {
     var current = CurrentUser.From(user, authOpts.EffectiveMode);
@@ -110,7 +115,7 @@ app.MapGet("/api/me", (ClaimsPrincipal user, AuthOptions authOpts) =>
 
 var api = app.MapGroup("/api/audits").RequireAuthorization(AuthPolicies.AnalystOrAdmin);
 
-// 0. List recent saved sessions (from Postgres) with document names & scores so UI can reopen past audits with 0 LLM tokens.
+// 0. List recent saved sessions (from Postgres) with document names, scores & token/cost telemetry.
 api.MapGet("/recent", async (IServiceProvider sp, CancellationToken ct) =>
 {
     var ds = sp.GetService<NpgsqlDataSource>();
@@ -122,7 +127,11 @@ api.MapGet("/recent", async (IServiceProvider sp, CancellationToken ct) =>
                s.updated_at,
                (SELECT e.payload->'document'->>'sourceFileName' FROM audit_events e WHERE e.session_id = s.session_id AND e.type = 'TZ_INGESTED' LIMIT 1) AS file_name,
                (SELECT e.payload->'document'->>'title' FROM audit_events e WHERE e.session_id = s.session_id AND e.type = 'TZ_INGESTED' LIMIT 1) AS doc_title,
-               (SELECT (e.payload->>'qualityScore')::int FROM audit_events e WHERE e.session_id = s.session_id AND e.type = 'REPORT_READY' ORDER BY e.seq DESC LIMIT 1) AS score
+               (SELECT (e.payload->>'qualityScore')::int FROM audit_events e WHERE e.session_id = s.session_id AND e.type = 'REPORT_READY' ORDER BY e.seq DESC LIMIT 1) AS score,
+               s.input_tokens,
+               s.output_tokens,
+               s.estimated_cost_usd,
+               s.llm_calls
         FROM audit_sessions s
         ORDER BY s.updated_at DESC
         LIMIT 20
@@ -140,6 +149,10 @@ api.MapGet("/recent", async (IServiceProvider sp, CancellationToken ct) =>
             fileName = r.IsDBNull(4) ? r.GetString(0) : r.GetString(4),
             title = r.IsDBNull(5) ? "" : r.GetString(5),
             score = r.IsDBNull(6) ? (int?)null : r.GetInt32(6),
+            inputTokens = r.GetInt64(7),
+            outputTokens = r.GetInt64(8),
+            estimatedCostUsd = r.GetDecimal(9),
+            llmCalls = r.GetInt32(10),
         });
     }
     return Results.Ok(list);
@@ -322,8 +335,8 @@ api.MapGet("/{id}/export/fixed.md", async (string id, IEventStore events, PiiMas
     return Results.File(Encoding.UTF8.GetBytes(md), "text/markdown; charset=utf-8", $"{baseName}-fixed.md");
 });
 
-// 9b. Export clean patched PDF (inline for iframe preview or ?download=1 for file download).
-api.MapGet("/{id}/export/fixed.pdf", async (string id, bool? download, IEventStore events, PiiMasker masker, IOptions<PatchOptions> patchOpts, HttpResponse resp, CancellationToken ct) =>
+// 9b. Export clean patched PDF (inline for iframe preview or ?download=1 / ?download=true for file download).
+api.MapGet("/{id}/export/fixed.pdf", async (string id, string? download, IEventStore events, PiiMasker masker, IOptions<PatchOptions> patchOpts, HttpResponse resp, CancellationToken ct) =>
 {
     var log = await events.ReadAsync(id, ct: ct);
     var state = AuditState.From(log);
@@ -340,7 +353,9 @@ api.MapGet("/{id}/export/fixed.pdf", async (string id, bool? download, IEventSto
 
     var pdfBytes = DocumentExporter.RenderPdf(demaskedDoc, demaskedReport, patchOpts.Value.IncludeGherkinInFixed);
     var baseName = Path.GetFileNameWithoutExtension(doc.SourceFileName);
-    if (download == true)
+    var isDownload = string.Equals(download, "1", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(download, "true", StringComparison.OrdinalIgnoreCase);
+    if (isDownload)
         return Results.File(pdfBytes, "application/pdf", $"{baseName}-fixed.pdf");
     resp.Headers.ContentDisposition = $"inline; filename=\"{baseName}-fixed.pdf\"";
     return Results.Bytes(pdfBytes, "application/pdf");
@@ -621,8 +636,14 @@ app.MapPost("/api/knowledge", async (ClaimsPrincipal user, AuthOptions authOpts,
 app.MapDelete("/api/knowledge/{name}", async (ClaimsPrincipal user, AuthOptions authOpts, string name,
     IKnowledgeBase kb, IAdminAuditLog auditLog, IConfiguration config, IWebHostEnvironment env, CancellationToken ct) =>
 {
-    var safe = Path.GetFileName(name);
-    if (string.IsNullOrWhiteSpace(safe) || !safe.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+    var decoded = Uri.UnescapeDataString(name);
+    var safe = Path.GetFileName(decoded);
+    if (string.IsNullOrWhiteSpace(safe) ||
+        decoded != safe ||
+        decoded.Contains("..", StringComparison.Ordinal) ||
+        decoded.Contains('/') ||
+        decoded.Contains('\\') ||
+        !safe.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
         return Results.BadRequest(new { error = "Некорректное имя файла." });
 
     var dir = ResolveKbDir(kb, config, env.ContentRootPath);

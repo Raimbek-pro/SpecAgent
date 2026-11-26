@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SpecAgent.Agents.Agents;
 using SpecAgent.Agents.Llm;
+using SpecAgent.Agents.Telemetry;
 using SpecAgent.Agents.Tools;
 using SpecAgent.Core.Events;
 using SpecAgent.Core.Findings;
@@ -23,12 +24,14 @@ public sealed class AuditOrchestrator(
     ToolGateway tools,
     IOptions<PatchOptions> patchOptions,
     ILogger<AuditOrchestrator> logger,
-    ChecklistAgent? checklist = null)
+    ChecklistAgent? checklist = null,
+    SpecAgentMetrics? metrics = null)
 {
     public const string Name = "orchestrator";
 
     public async Task RunAsync(string sessionId, CancellationToken ct = default)
     {
+        using var telemetryScope = AuditTelemetryContext.BeginSession(sessionId);
         var state = AuditState.From(await events.ReadAsync(sessionId, ct: ct));
         if (state.Finished) return;
         var doc = state.Document ?? throw new InvalidOperationException($"Session {sessionId} has no TZ_INGESTED event");
@@ -36,7 +39,10 @@ public sealed class AuditOrchestrator(
         if (state.Started)
             await events.AppendAsync(sessionId, EventTypes.Resumed, Name, $"wake({sessionId}) from event {state.LastSeq}", ct: ct);
         else
+        {
+            metrics?.RecordAuditStarted();
             await events.AppendAsync(sessionId, EventTypes.RunStarted, Name, $"session {sessionId}: {doc.Sections.Count} sections", ct: ct);
+        }
 
         try
         {
@@ -106,10 +112,12 @@ public sealed class AuditOrchestrator(
             };
             await events.AppendAsync(sessionId, EventTypes.ReportReady, Name,
                 $"report ready: score {report.QualityScore}, {report.Findings.Count} findings", report, ct);
+            metrics?.RecordAuditCompleted();
         }
         catch (OperationCanceledException) { throw; } // worker shutdown → session stays open → resumed later
         catch (Exception ex)
         {
+            metrics?.RecordAuditFailed();
             logger.LogError(ex, "Audit {Session} failed", sessionId);
             await events.AppendAsync(sessionId, EventTypes.RunFailed, Name, ex.Message, ct: CancellationToken.None);
         }
@@ -161,6 +169,7 @@ public sealed class AuditOrchestrator(
     /// <summary>Human-in-the-loop: ask one critic about one section. Answer is appended to the same log.</summary>
     public async Task<AskOutput> AskAsync(string sessionId, string critic, string sectionId, string question, CancellationToken ct)
     {
+        using var telemetryScope = AuditTelemetryContext.BeginSession(sessionId);
         var state = AuditState.From(await events.ReadAsync(sessionId, ct: ct));
         var doc = state.Document ?? throw new InvalidOperationException("Unknown session");
         var profile = CriticAgent.Profiles.FirstOrDefault(p => p.Name.Equals(critic, StringComparison.OrdinalIgnoreCase))

@@ -69,13 +69,15 @@ The following endpoints and capabilities are live and verified (18/18 unit tests
    - Implemented `ISystemSettingsStore` (`PostgresSystemSettingsStore` + `InMemorySystemSettingsStore`) persisting `PatchOptions`, `ModelRoutingOptions`, and `PiiMasker` settings in `system_settings` and hydrating them automatically on API startup.
    - Covered by `SecurityAndPersistenceTests` (unit, `WebApplicationFactory`, and live PostgreSQL tests).
 
-### P3 — Testing & Observability
+### P3 — Testing & Observability (Done ✅)
 
-8. **Integration Tests for New Endpoints**
-   - Add `WebApplicationFactory` integration tests covering:
-     - `GET/PUT /api/settings` (including `403 Forbidden` for non-admin roles).
-     - `GET/POST/DELETE /api/knowledge` (including path-traversal rejection).
-     - `GET /api/audits/{id}/export/fixed.pdf` and `fixed.docx` (verify non-empty valid PDF/DOCX bytes & `IncludeGherkinInFixed` toggle).
-     - `PiiMaskerTests` for international phone numbers (`+1`, `+44`, `+998`, `+7`, `8`).
-9. **Structured Telemetry & Cost Tracking**
-   - Record per-session input/output token usage and estimated USD cost in `audit_sessions` (surfaced in `/api/audits/recent` and Prometheus/OpenTelemetry metrics).
+8. **✅ Integration Tests for New Endpoints**
+   - Covered across `AuthAndAdminAuditTests`, `SecurityAndPersistenceTests`, `EndpointExportAndTelemetryTests`, and `PiiMaskerTests`:
+     - `GET/PUT /api/settings` (including `403 Forbidden` for non-admin roles and JWT/Keycloak RBAC).
+     - `GET/POST/DELETE /api/knowledge` (including path-traversal rejection `..%2F`, magic-byte and size validation).
+     - `GET /api/audits/{id}/export/fixed.pdf` and `fixed.docx` (verified valid `%PDF-` / OpenXML bytes and `IncludeGherkinInFixed` toggle).
+     - `PiiMaskerTests` for international & CIS phone numbers (`+1`, `+44`, `+998`, `+7`, `8`), labeled synthetic IIN, and `EnabledKinds` toggling.
+
+9. **✅ Structured Telemetry & Cost Tracking**
+   - Added migration `004_session_telemetry.sql`, `AuditTelemetryContext`, `ModelPricing`, `ISessionUsageStore` (`PostgresSessionUsageStore` + `InMemorySessionUsageStore`), and OpenTelemetry `Meter("SpecAgent")` + Prometheus `GET /metrics` endpoint (`SpecAgentMetrics`).
+   - Per-session `inputTokens`, `outputTokens`, `estimatedCostUsd`, and `llmCalls` are recorded automatically by `OpenAiCompatibleLlmClient` / `ClaudeLlmClient` and surfaced in `GET /api/audits/recent`.
