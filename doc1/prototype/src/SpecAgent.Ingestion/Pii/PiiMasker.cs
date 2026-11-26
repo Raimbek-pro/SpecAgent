@@ -17,6 +17,8 @@ public sealed partial class PiiMasker(IPiiVault vault)
     [GeneratedRegex(@"\bKZ\d{2}[A-Z0-9]{16}\b", RegexOptions.IgnoreCase)] private static partial Regex Iban();
     [GeneratedRegex(@"\b(?:\d[ -]?){12,18}\d\b")] private static partial Regex Pan();
     [GeneratedRegex(@"\b\d{12}\b")] private static partial Regex Iin();
+    // Explicitly labeled IIN/BIN (e.g. "ИИН тестового клиента: 950115350123") — mask even if test checksum is synthetic.
+    [GeneratedRegex(@"(?i)((?:ИИН|БИН|IIN|BIN)[^\d\r\n]{0,30})(\d{12})\b")] private static partial Regex LabeledIin();
     // International E.164 / formatted phones (+1, +44, +7, +998, etc.) and local CIS 8-xxx numbers.
     [GeneratedRegex(@"(?<!\d)(?:\+\d{1,3}[\s\-()]*(?:\d[\s\-()]*){8,13}\d|8[\s\-(]*\d{3}[\s\-)]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2})(?!\d)")] private static partial Regex Phone();
     [GeneratedRegex(@"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")] private static partial Regex Email();
@@ -49,6 +51,11 @@ public sealed partial class PiiMasker(IPiiVault vault)
     public string Mask(string sessionId, string text)
     {
         if (!Enabled) return text;
+        if (EnabledKinds.Contains("IIN"))
+        {
+            text = LabeledIin().Replace(text, m =>
+                m.Groups[1].Value + vault.Tokenize(sessionId, "IIN", m.Groups[2].Value));
+        }
         foreach (var rule in Rules)
         {
             if (!EnabledKinds.Contains(rule.Kind)) continue;
