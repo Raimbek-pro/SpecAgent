@@ -910,12 +910,21 @@ function renderLeftPane(t) {
         ? `Документ может быть передан в разработку условно — после устранения критического замечания и проверки граничных сценариев.`
         : `Документ соответствует базовым критериям ISO/IEC/IEEE 29148 и готов к передаче в разработку.`;
     const topRisks = rep.findings.filter(f => f.severity === 'Blocker' || f.severity === 'Critical').slice(0, 3);
+    const patchedIds = new Set(rep.patches.filter(p => p.after && p.after.trim()).map(p => p.sectionId));
+    const remFindings = rep.findings.filter(f => !patchedIds.has(f.sectionId));
+    const remPen = remFindings.reduce((acc, f) => acc + (f.severity === 'Blocker' ? 15 : f.severity === 'Critical' ? 8 : f.severity === 'Major' ? 4 : 1), 0);
+    const afterScore = Math.max(0, 100 - remPen);
+    const delta = afterScore - rep.qualityScore;
+    const afterBadge = rep.patches.length > 0
+      ? `<span style="margin-left:8px;font:600 12px/1 var(--mono);color:var(--ok)">→ ${afterScore}/100 после правок${delta > 0 ? ' (+' + delta + ')' : ''}</span>`
+      : '';
     leftScoreCard = `
       <div class="score-strip">
         <div class="score-strip-head">
           <div>
             <b>Quality Score: ${rep.qualityScore} / 100</b>
             <span class="sev ${b > 0 || c >= 2 ? 'Blocker' : c === 1 ? 'Critical' : 'Ok'}" style="margin-left:6px">${verdict}</span>
+            ${afterBadge}
           </div>
           <span class="score-strip-meta" style="margin-top:0">Домен: ${esc(rep.domain || 'FinTech')} · Затронуто: ${affectedCount}/${t.doc.sections.length} · Правок: ${verifiedPatches}</span>
         </div>
@@ -1168,8 +1177,9 @@ function renderRightPane() {
       t.doc.sections.map(s => {
         const p = patchesBySection[s.id];
         const body = p && p.after ? p.after : s.text;
-        const heading = s.title ? `<h2>${esc(s.id.startsWith('s-') ? s.title : s.id + ' ' + s.title)}</h2>` : '';
-        return heading + renderMarkdown(body, []);
+        const isDupTitle = (s.title || '').trim().toLowerCase() === (t.doc.title || '').trim().toLowerCase();
+        const heading = s.title && !isDupTitle ? `<h2>${esc(s.id.startsWith('s-') ? s.title : s.id + ' ' + s.title)}</h2>` : '';
+        return heading + (body ? renderMarkdown(body, []) : '');
       }).join('') + `</div>`;
     return;
   }

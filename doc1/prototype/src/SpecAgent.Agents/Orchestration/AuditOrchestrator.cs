@@ -167,7 +167,9 @@ public sealed class AuditOrchestrator(
                       ?? throw new ArgumentException($"Unknown agent '@{critic}'. Use one of: {string.Join(", ", CriticNames.AllLlm)}");
 
         await events.AppendAsync(sessionId, EventTypes.HumanQuestion, "analyst", $"@{critic} [{sectionId}] {question}", ct: ct);
-        var answer = await new CriticAgent(profile, llm, prompts, tools).AskAsync(doc, sectionId, question, ct);
+        var secFindings = state.Judged?.Findings.Where(f => f.SectionId == sectionId).ToList();
+        var secPatch = state.Patches?.LastOrDefault(p => p.SectionId == sectionId);
+        var answer = await new CriticAgent(profile, llm, prompts, tools).AskAsync(doc, sectionId, question, ct, sessionId, secFindings, secPatch);
         await events.AppendAsync(sessionId, EventTypes.AgentAnswer, profile.Name, answer.Answer, answer, ct);
         return answer;
     }

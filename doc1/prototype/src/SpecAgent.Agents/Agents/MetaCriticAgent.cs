@@ -51,11 +51,12 @@ public sealed partial class MetaCriticAgent(ILlmClient llm, PromptLibrary prompt
         JudgeOutput output;
         try
         {
+            var docIndex = DocumentIndex.Build(doc);
             output = await llm.CompleteJsonAsync<JudgeOutput>(new AgentCall
             {
                 Agent = Name,
                 System = prompts.System("meta-critic"),
-                User = $"<document title=\"{doc.Title}\">\n{doc.ToPromptText()}\n</document>\n\n<raw_findings>\n" +
+                User = $"<document_index>\n{docIndex}\n</document_index>\n\n<document title=\"{doc.Title}\">\n{doc.ToPromptText()}\n</document>\n\n<raw_findings>\n" +
                        JsonSerializer.Serialize(grounded, EventJson.Options) + "\n</raw_findings>",
                 MaxTokens = 32000,
             }, ct);

@@ -65,7 +65,15 @@ public sealed class ToolGateway(IEventStore events, IKnowledgeBase kb)
         sb.AppendLine($"| **Сессия** | `{report.SessionId}` |");
         sb.AppendLine($"| **Домен** | {report.Domain} |");
         sb.AppendLine($"| **Модель** | `{modelName}` |");
-        sb.AppendLine($"| **Оценка качества (Score)** | **{report.QualityScore} / 100** |");
+        var patchedSections = report.Patches.Where(p => !string.IsNullOrWhiteSpace(p.After)).Select(p => p.SectionId).ToHashSet();
+        var remPenalty = report.Findings.Where(f => !patchedSections.Contains(f.SectionId))
+            .Sum(f => f.Severity switch { Severity.Blocker => 15, Severity.Critical => 8, Severity.Major => 4, _ => 1 });
+        var afterScore = Math.Max(0, 100 - remPenalty);
+        var scoreText = report.Patches.Count > 0
+            ? $"**{report.QualityScore} / 100 → {afterScore} / 100** после автоисправлений (+{afterScore - report.QualityScore})"
+            : $"**{report.QualityScore} / 100**";
+
+        sb.AppendLine($"| **Оценка качества (Score)** | {scoreText} |");
         sb.AppendLine();
 
         sb.AppendLine("## 2. Как агент нарезал требования");
@@ -147,8 +155,12 @@ public sealed class ToolGateway(IEventStore events, IKnowledgeBase kb)
 
         foreach (var s in doc.Sections)
         {
-            sb.AppendLine($"## {s.Id} {s.Title}");
-            sb.AppendLine();
+            var isDupTitle = string.Equals(s.Title.Trim(), doc.Title.Trim(), StringComparison.OrdinalIgnoreCase);
+            if (!isDupTitle)
+            {
+                sb.AppendLine($"## {s.Id} {s.Title}".TrimEnd());
+                sb.AppendLine();
+            }
             if (patchBySection.TryGetValue(s.Id, out var patch) && !string.IsNullOrWhiteSpace(patch.After))
             {
                 sb.AppendLine(patch.After.Trim());

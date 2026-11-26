@@ -99,19 +99,21 @@ public static partial class DocumentExporter
 
                     foreach (var (id, title, body) in sections)
                     {
-                        if (!string.IsNullOrWhiteSpace(title))
+                        var isDupDocTitle = string.Equals(title.Trim(), doc.Title.Trim(), StringComparison.OrdinalIgnoreCase);
+                        if (!string.IsNullOrWhiteSpace(title) && !isDupDocTitle)
                         {
                             var headingText = id.StartsWith("s-", StringComparison.OrdinalIgnoreCase)
                                 ? title
                                 : $"{id}  {title}";
                             col.Item().PaddingTop(8).Text(headingText).FontSize(12).Bold().FontColor("#111827");
                         }
-                        else if (!id.StartsWith("s-", StringComparison.OrdinalIgnoreCase) && id != "0")
+                        else if (!isDupDocTitle && !id.StartsWith("s-", StringComparison.OrdinalIgnoreCase) && id != "0")
                         {
                             col.Item().PaddingTop(6).Text(id).FontSize(10.5f).Bold().FontColor("#24292F");
                         }
 
-                        RenderMarkdownBlocksToPdf(col, body);
+                        if (!string.IsNullOrWhiteSpace(body))
+                            RenderMarkdownBlocksToPdf(col, body);
                     }
                 });
 
@@ -253,17 +255,19 @@ public static partial class DocumentExporter
 
             foreach (var (id, title, text) in sections)
             {
-                if (!string.IsNullOrWhiteSpace(title))
+                var isDupDocTitle = string.Equals(title.Trim(), doc.Title.Trim(), StringComparison.OrdinalIgnoreCase);
+                if (!string.IsNullOrWhiteSpace(title) && !isDupDocTitle)
                 {
                     var h = id.StartsWith("s-", StringComparison.OrdinalIgnoreCase) ? title : $"{id} {title}";
                     body.AppendChild(MakeParagraph(h, bold: true, fontSizeHalfPt: "26", spaceBefore: "200", spaceAfter: "100"));
                 }
-                else if (!id.StartsWith("s-", StringComparison.OrdinalIgnoreCase) && id != "0")
+                else if (!isDupDocTitle && !id.StartsWith("s-", StringComparison.OrdinalIgnoreCase) && id != "0")
                 {
                     body.AppendChild(MakeParagraph(id, bold: true, fontSizeHalfPt: "22", spaceBefore: "140", spaceAfter: "60"));
                 }
 
-                AppendMarkdownToDocxBody(body, text);
+                if (!string.IsNullOrWhiteSpace(text))
+                    AppendMarkdownToDocxBody(body, text);
             }
 
             mainPart.Document.Save();

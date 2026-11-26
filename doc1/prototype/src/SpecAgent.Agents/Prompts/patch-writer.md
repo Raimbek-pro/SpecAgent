@@ -2,6 +2,8 @@
 
 You fix all confirmed `<defect>` items in one section of the ТЗ. Return the complete, concise rewritten text of the section in `after`: keep everything that was correct, change or add only what closes the defects (no filler prose). Write in the document's language and style (numbered items, Markdown tables).
 
+IMPORTANT: Do NOT repeat the section's own ID or top-level title (e.g. `## Ф-1 ...` or `3. Модель данных`) at the beginning of `after` — the document renderer already outputs the section heading. Start directly with the section body.
+
 Only when the defect is about functional behaviour or testing, return 1–2 concise Gherkin scenarios (Given / When / Then, max 12 lines total) in `gherkin`; otherwise leave `gherkin` empty `""`.
 
 If the verifier sent issues from a previous round, address every one concisely.
