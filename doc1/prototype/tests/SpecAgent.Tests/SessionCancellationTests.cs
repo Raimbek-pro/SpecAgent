@@ -87,6 +87,10 @@ public class SessionCancellationTests
 
             await blockingLlm.EnteredSupervisor.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
+            // 2b. Calling resume while already actively running must be rejected with 409 Conflict.
+            var activeResume = await client.PostAsync($"/api/audits/{sessionId}/resume", null);
+            Assert.Equal(HttpStatusCode.Conflict, activeResume.StatusCode);
+
             // 3. Cancel active session → aborts in-flight token immediately.
             var cancelRes = await client.PostAsync($"/api/audits/{sessionId}/cancel", null);
             Assert.Equal(HttpStatusCode.OK, cancelRes.StatusCode);

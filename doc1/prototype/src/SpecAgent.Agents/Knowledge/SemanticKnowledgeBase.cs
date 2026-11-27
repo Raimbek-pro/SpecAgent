@@ -38,7 +38,7 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
         {
             _initLock.Release();
         }
-        await EnsureInitializedAsync(ct);
+        await EnsureInitializedAsync(ct, recreateCollection: true);
     }
 
     private readonly List<VectorChunk> _chunks = [];
@@ -107,7 +107,7 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
         return scored.Count > 0 ? scored : _keywordFallback.Search(query, top);
     }
 
-    private async Task EnsureInitializedAsync(CancellationToken ct)
+    private async Task EnsureInitializedAsync(CancellationToken ct, bool recreateCollection = false)
     {
         if (_initialized) return;
         await _initLock.WaitAsync(ct);
@@ -157,7 +157,7 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
             }
 
             if (dirty) SaveCache(cache);
-            await TrySyncQdrantAsync(ct);
+            await TrySyncQdrantAsync(ct, recreateCollection);
             _initialized = true;
         }
         finally
@@ -166,16 +166,24 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
         }
     }
 
-    private async Task TrySyncQdrantAsync(CancellationToken ct)
+    private async Task TrySyncQdrantAsync(CancellationToken ct, bool recreateCollection = false)
     {
         if (_qdrant is null) return;
         var vectorized = _chunks.Where(c => c.Vector is not null).ToList();
-        if (vectorized.Count == 0) return;
 
         try
         {
-            var dim = (ulong)vectorized[0].Vector!.Length;
             var exists = await _qdrant.CollectionExistsAsync(CollectionName, ct);
+            if (recreateCollection && exists)
+            {
+                await _qdrant.DeleteCollectionAsync(CollectionName, cancellationToken: ct);
+                exists = false;
+                _qdrantReady = false;
+            }
+
+            if (vectorized.Count == 0) return;
+
+            var dim = (ulong)vectorized[0].Vector!.Length;
             if (!exists)
                 await _qdrant.CreateCollectionAsync(CollectionName, new VectorParams { Size = dim, Distance = Distance.Cosine }, cancellationToken: ct);
 

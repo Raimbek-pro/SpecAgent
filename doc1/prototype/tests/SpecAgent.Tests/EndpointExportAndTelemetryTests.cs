@@ -117,6 +117,26 @@ public class EndpointExportAndTelemetryTests
             var nonMd = await client.DeleteAsync("/api/knowledge/secret.txt");
             Assert.Equal(HttpStatusCode.BadRequest, nonMd.StatusCode);
 
+            // 5b. Built-in RAG standards cannot be deleted or overwritten.
+            var delBuiltIn = await client.DeleteAsync("/api/knowledge/mandatory-checklist.md");
+            Assert.Equal(HttpStatusCode.Conflict, delBuiltIn.StatusCode);
+
+            using var builtInForm = new MultipartFormDataContent();
+            builtInForm.Add(new ByteArrayContent(Encoding.UTF8.GetBytes("# spoof")), "file", "mandatory-checklist.md");
+            var overwriteBuiltIn = await client.PostAsync("/api/knowledge", builtInForm);
+            Assert.Equal(HttpStatusCode.Conflict, overwriteBuiltIn.StatusCode);
+
+            // 5c. Updating settings with the current defaultModel preserves specialized hybrid agent overrides.
+            var saveSettingsRes = await client.PutAsJsonAsync("/api/settings", new
+            {
+                model = new { defaultModel = "gemini-3.5-flash-lite", defaultEffort = "low" },
+            });
+            Assert.Equal(HttpStatusCode.OK, saveSettingsRes.StatusCode);
+            var routingOpts = factory.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<ModelRoutingOptions>>().Value;
+            Assert.Equal("gemini-3.5-flash-lite", routingOpts.Default.Model);
+            Assert.Equal("gemini-3.8-flash", routingOpts.For("meta-critic").Model);
+            Assert.Equal("gemini-3.8-flash", routingOpts.For("patch-verifier").Model);
+
             // 6. Prometheus /metrics endpoint exposes completed audit telemetry.
             var metricsRes = await client.GetAsync("/metrics");
             Assert.Equal(HttpStatusCode.OK, metricsRes.StatusCode);

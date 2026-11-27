@@ -185,9 +185,11 @@ public sealed class AuditOrchestrator(
     {
         using var telemetryScope = AuditTelemetryContext.BeginSession(sessionId);
         var state = AuditState.From(await events.ReadAsync(sessionId, ct: ct));
-        var doc = state.Document ?? throw new InvalidOperationException("Unknown session");
+        var doc = state.Document ?? throw new ToolError($"Session '{sessionId}' not found");
         var profile = CriticAgent.Profiles.FirstOrDefault(p => p.Name.Equals(critic, StringComparison.OrdinalIgnoreCase))
                       ?? throw new ArgumentException($"Unknown agent '@{critic}'. Use one of: {string.Join(", ", CriticNames.AllLlm)}");
+        if (doc.Find(sectionId) is null)
+            throw new ToolError($"Section '{sectionId}' not found");
 
         var history = state.ChatsBySection.TryGetValue(sectionId, out var existing)
             ? existing.TakeLast(10).ToList()

@@ -118,6 +118,26 @@ public class SessionChatTests
             Assert.Contains("900101300037", thread[1].GetProperty("text").GetString());
             Assert.Equal("user", thread[2].GetProperty("role").GetString());
             Assert.Equal("distributed", thread[2].GetProperty("agent").GetString());
+
+            // 5. Unknown session and unknown section return 404 (not 500) and never pollute the chat log.
+            var unknownSessionRes = await client.PostAsJsonAsync("/api/audits/s-missing/ask", new
+            {
+                agent = "@compliance",
+                sectionId = "4.3",
+                question = "Тест",
+            });
+            Assert.Equal(HttpStatusCode.NotFound, unknownSessionRes.StatusCode);
+
+            var unknownSectionRes = await client.PostAsJsonAsync($"/api/audits/{sessionId}/ask", new
+            {
+                agent = "@compliance",
+                sectionId = "99.99",
+                question = "Вопрос по несуществующей секции",
+            });
+            Assert.Equal(HttpStatusCode.NotFound, unknownSectionRes.StatusCode);
+
+            var chatAfterBadAsk = await client.GetFromJsonAsync<JsonElement>($"/api/audits/{sessionId}/chat");
+            Assert.False(chatAfterBadAsk.TryGetProperty("99.99", out _));
             Assert.Equal("agent", thread[3].GetProperty("role").GetString());
             Assert.Contains("Idempotency-Key", thread[3].GetProperty("text").GetString());
         }

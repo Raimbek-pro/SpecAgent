@@ -313,6 +313,7 @@ api.MapPost("/{id}/ask", async (string id, AskRequest req, AuditOrchestrator orc
     }
     catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
     catch (ToolError ex) { return Results.NotFound(new { error = ex.Message }); }
+    catch (LlmException ex) { return Results.Json(new { error = ex.Message }, statusCode: 503); }
 }).WithSummary("Ask a domain critic about a section (multi-turn chat)").RequireRateLimiting(RateLimitPolicies.AgentAsk);
 
 // 6b. Persistent per-section chat history (demasked) rebuilt from the session event log.
@@ -343,13 +344,15 @@ api.MapGet("/{id}/chat", async (string id, IEventStore events, PiiMasker masker,
 }).WithSummary("Get persistent per-section @agent chat history");
 
 // 7. Manual wake(): re-enqueue a failed or cancelled session to continue from the last completed step.
-api.MapPost("/{id}/resume", async (string id, IEventStore events, AuditQueue queue, CancellationToken ct) =>
+api.MapPost("/{id}/resume", async (string id, IEventStore events, AuditQueue queue, AuditSessionRegistry registry, CancellationToken ct) =>
 {
     var log = await events.ReadAsync(id, ct: ct);
     if (log.Count == 0) return Results.NotFound(new { error = $"Сессия '{id}' не найдена." });
     var state = AuditState.From(log);
     if (state.Finished)
         return Results.Conflict(new { error = "Аудит уже завершён." });
+    if (registry.IsActive(id))
+        return Results.Conflict(new { error = "Аудит уже выполняется." });
     if (state.Cancelled || state.Failed)
         await events.AppendAsync(id, EventTypes.Resumed, AuditOrchestrator.Name, $"manual resume({id}) from event {state.LastSeq}", ct: ct);
 
@@ -526,6 +529,33 @@ static PersistedSystemSettings ToPersistedSettings(PatchOptions p, ModelRoutingO
     new PersistedModelSettings(m.Default.Model, m.Default.Effort),
     new PersistedPiiSettings(masker.Enabled, PiiMasker.AllKinds.ToDictionary(k => k, k => masker.EnabledKinds.Contains(k))));
 
+static void ApplyModelSettings(ModelRoutingOptions m, string? defaultModel, string? defaultEffort)
+{
+    if (!string.IsNullOrWhiteSpace(defaultModel))
+    {
+        var prevDefault = m.Default.Model;
+        var nextDefault = defaultModel.Trim();
+        m.Default.Model = nextDefault;
+        // Preserve per-agent specialized overrides (e.g. meta-critic/patch-verifier on gemini-3.8-flash).
+        foreach (var ag in m.Agents.Values)
+        {
+            if (string.IsNullOrWhiteSpace(ag.Model) || string.Equals(ag.Model, prevDefault, StringComparison.OrdinalIgnoreCase))
+                ag.Model = nextDefault;
+        }
+    }
+    if (!string.IsNullOrWhiteSpace(defaultEffort))
+    {
+        var prevEffort = m.Default.Effort;
+        var nextEffort = defaultEffort.Trim();
+        m.Default.Effort = nextEffort;
+        foreach (var ag in m.Agents.Values)
+        {
+            if (string.IsNullOrWhiteSpace(ag.Effort) || string.Equals(ag.Effort, prevEffort, StringComparison.OrdinalIgnoreCase))
+                ag.Effort = nextEffort;
+        }
+    }
+}
+
 static void ApplyPersistedSettings(PersistedSystemSettings saved, PatchOptions p, ModelRoutingOptions m, PiiMasker masker)
 {
     if (saved.Patches is { } sp)
@@ -538,16 +568,7 @@ static void ApplyPersistedSettings(PersistedSystemSettings saved, PatchOptions p
     }
     if (saved.Model is { } sm)
     {
-        if (!string.IsNullOrWhiteSpace(sm.DefaultModel))
-        {
-            m.Default.Model = sm.DefaultModel.Trim();
-            foreach (var ag in m.Agents.Values) ag.Model = sm.DefaultModel.Trim();
-        }
-        if (!string.IsNullOrWhiteSpace(sm.DefaultEffort))
-        {
-            m.Default.Effort = sm.DefaultEffort.Trim();
-            foreach (var ag in m.Agents.Values) ag.Effort = sm.DefaultEffort.Trim();
-        }
+        ApplyModelSettings(m, sm.DefaultModel, sm.DefaultEffort);
     }
     if (saved.Pii is { } spii)
     {
@@ -578,16 +599,7 @@ app.MapPut("/api/settings", async (ClaimsPrincipal user, AuthOptions authOpts, S
 
     if (body.Model is { } m)
     {
-        if (!string.IsNullOrWhiteSpace(m.DefaultModel))
-        {
-            modelOpts.Value.Default.Model = m.DefaultModel.Trim();
-            foreach (var ag in modelOpts.Value.Agents.Values) ag.Model = m.DefaultModel.Trim();
-        }
-        if (!string.IsNullOrWhiteSpace(m.DefaultEffort))
-        {
-            modelOpts.Value.Default.Effort = m.DefaultEffort.Trim();
-            foreach (var ag in modelOpts.Value.Agents.Values) ag.Effort = m.DefaultEffort.Trim();
-        }
+        ApplyModelSettings(modelOpts.Value, m.DefaultModel, m.DefaultEffort);
     }
 
     if (body.Pii is { } pii)
@@ -668,6 +680,9 @@ app.MapPost("/api/knowledge", async (ClaimsPrincipal user, AuthOptions authOpts,
     var safeBase = string.Concat(rawName.Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' ? ch : '-')).Trim('-');
     if (string.IsNullOrWhiteSpace(safeBase)) safeBase = $"ref-{Guid.NewGuid():N}"[..12];
     var targetPath = Path.Combine(dir, $"{safeBase}.md");
+    var savedName = Path.GetFileName(targetPath);
+    if (builtInKbFiles.Contains(savedName))
+        return Results.Conflict(new { error = $"Нельзя перезаписать встроенный стандарт '{savedName}'." });
 
     string mdContent;
     if (file.FileName.EndsWith(".md", StringComparison.OrdinalIgnoreCase) || file.FileName.EndsWith(".txt", StringComparison.OrdinalIgnoreCase))
@@ -688,9 +703,8 @@ app.MapPost("/api/knowledge", async (ClaimsPrincipal user, AuthOptions authOpts,
     }
 
     await File.WriteAllTextAsync(targetPath, mdContent, Encoding.UTF8, ct);
-    if (kb is SemanticKnowledgeBase skb) await skb.ReloadAsync();
+    if (kb is SemanticKnowledgeBase skb) await skb.ReloadAsync(ct);
 
-    var savedName = Path.GetFileName(targetPath);
     var sizeBytes = Encoding.UTF8.GetByteCount(mdContent);
     var actor = CurrentUser.From(user, authOpts.EffectiveMode);
     await auditLog.RecordAsync(actor.Sub, actor.Role, "knowledge.upload", savedName,
@@ -712,12 +726,15 @@ app.MapDelete("/api/knowledge/{name}", async (ClaimsPrincipal user, AuthOptions 
         !safe.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
         return Results.BadRequest(new { error = "Некорректное имя файла." });
 
+    if (builtInKbFiles.Contains(safe))
+        return Results.Conflict(new { error = $"Нельзя удалить встроенный стандарт '{safe}'." });
+
     var dir = ResolveKbDir(kb, config, env.ContentRootPath);
     var path = Path.Combine(dir, safe);
     if (!File.Exists(path)) return Results.NotFound();
 
     File.Delete(path);
-    if (kb is SemanticKnowledgeBase skb) await skb.ReloadAsync();
+    if (kb is SemanticKnowledgeBase skb) await skb.ReloadAsync(ct);
 
     var actor = CurrentUser.From(user, authOpts.EffectiveMode);
     await auditLog.RecordAsync(actor.Sub, actor.Role, "knowledge.delete", safe,

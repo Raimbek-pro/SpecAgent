@@ -39,6 +39,20 @@ public sealed class AuditSessionRegistry
         }
     }
 
+    public bool TryBegin(string sessionId, CancellationToken hostStoppingToken, out SessionLease? lease)
+    {
+        var userCts = new CancellationTokenSource();
+        if (!_active.TryAdd(sessionId, userCts))
+        {
+            userCts.Dispose();
+            lease = null;
+            return false;
+        }
+        var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(hostStoppingToken, userCts.Token);
+        lease = new SessionLease(sessionId, linkedCts.Token, userCts, linkedCts, this);
+        return true;
+    }
+
     public SessionLease Begin(string sessionId, CancellationToken hostStoppingToken)
     {
         var userCts = new CancellationTokenSource();
@@ -93,9 +107,16 @@ public sealed class AuditWorker(
             {
                 try
                 {
-                    using var lease = registry.Begin(sessionId, stoppingToken);
-                    using var scope = scopes.CreateScope();
-                    await scope.ServiceProvider.GetRequiredService<AuditOrchestrator>().RunAsync(sessionId, lease.Token);
+                    if (!registry.TryBegin(sessionId, stoppingToken, out var lease) || lease is null)
+                    {
+                        logger.LogInformation("Skipping duplicate queued execution for active session {Session}", sessionId);
+                        return;
+                    }
+                    using (lease)
+                    {
+                        using var scope = scopes.CreateScope();
+                        await scope.ServiceProvider.GetRequiredService<AuditOrchestrator>().RunAsync(sessionId, lease.Token);
+                    }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -103,7 +124,7 @@ public sealed class AuditWorker(
                 }
                 catch (Exception ex) { logger.LogError(ex, "Worker crashed on {Session}", sessionId); }
                 finally { _gate.Release(); }
-            }, stoppingToken);
+            }, CancellationToken.None);
         }
     }
 }
