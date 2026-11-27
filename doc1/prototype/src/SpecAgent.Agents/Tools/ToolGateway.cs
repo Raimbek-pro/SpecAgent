@@ -308,11 +308,13 @@ public sealed class ToolGateway(IEventStore events, IKnowledgeBase kb)
                 sb.AppendLine(patch.After.Trim());
                 if (includeGherkin && !string.IsNullOrWhiteSpace(patch.Gherkin))
                 {
+                    var gherkinBody = patch.Gherkin.Trim();
+                    var gherkinFence = FenceFor(gherkinBody);
                     sb.AppendLine();
                     sb.AppendLine("### Критерии приёмки (Gherkin)");
-                    sb.AppendLine("```gherkin");
-                    sb.AppendLine(patch.Gherkin.Trim());
-                    sb.AppendLine("```");
+                    sb.AppendLine($"{gherkinFence}gherkin");
+                    sb.AppendLine(gherkinBody);
+                    sb.AppendLine(gherkinFence);
                 }
             }
             else

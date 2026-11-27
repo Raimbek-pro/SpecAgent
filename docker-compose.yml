@@ -32,6 +32,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        SPECAGENT_VERSION: ${SPECAGENT_VERSION:-}
     container_name: specagent-api
     restart: unless-stopped
     depends_on:

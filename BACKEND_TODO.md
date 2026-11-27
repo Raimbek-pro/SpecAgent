@@ -6,11 +6,11 @@ This document summarizes recent AI/API/UI changes already merged into `main` and
 
 ## 1. Summary of Recent Changes Already Implemented
 
-The following endpoints and capabilities are live and verified (18/18 unit tests passing, Docker stack running on `localhost:5199`):
+The following endpoints and capabilities are live and verified (50/50 unit & PostgreSQL integration tests passing, 0 build warnings, Docker stack running on `localhost:5199`):
 
 - **Runtime Settings API (`GET/PUT /api/settings`):**
-  - Mutates `IOptions<PatchOptions>` (`MinSeverity`, `MaxPatches`, `MaxRounds`, `Parallelism`, `IncludeGherkinInFixed`), `IOptions<ModelRoutingOptions>` (`DefaultModel`, `DefaultEffort`), and `PiiMasker` (`Enabled`, `EnabledKinds`).
-  - Currently guarded by a demo `X-SpecAgent-Role` header check (`403 Forbidden` when `analyst`).
+  - Mutates `IOptions<PatchOptions>` (`MinSeverity`, `MaxPatches`, `MaxRounds`, `Parallelism`, `IncludeGherkinInFixed`), `IOptions<ModelRoutingOptions>` (`DefaultModel`, `DefaultEffort`, preserving per-agent hybrid overrides), and `PiiMasker` (`Enabled`, `EnabledKinds`), persisted in PostgreSQL `system_settings`.
+  - Guarded by ASP.NET Core Authorization policies (`AdminOnly` for writes, `AnalystOrAdmin` for reads).
 - **Dynamic RAG Knowledge Base API (`GET/POST/DELETE /api/knowledge`):**
   - Lists `.md` reference files in `Knowledge:Path`, accepts `.md/.txt/.pdf/.docx` uploads (converting PDF/DOCX via `DocumentParserRegistry`), writes to `knowledge/`, and calls `SemanticKnowledgeBase.ReloadAsync()` to re-index Qdrant.
 - **Native Document Exporters (`SpecAgent.Api/Export/DocumentExporter.cs`):**

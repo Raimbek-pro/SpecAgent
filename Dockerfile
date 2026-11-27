@@ -29,8 +29,10 @@ COPY doc1/prototype/knowledge ./knowledge
 
 RUN mkdir -p /app/uploads && chown -R $APP_UID /app/uploads /app/knowledge
 
+ARG SPECAGENT_VERSION=""
 ENV ASPNETCORE_URLS=http://+:8080
 ENV Knowledge__Path=/app/knowledge
+ENV SPECAGENT_VERSION=${SPECAGENT_VERSION}
 
 EXPOSE 8080
 

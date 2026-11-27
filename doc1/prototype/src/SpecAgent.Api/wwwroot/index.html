@@ -1815,7 +1815,7 @@ function renderMarkdown(rawText, sectionFindings) {
     }
   }
   const lines = text.split('\n');
-  let html = '', inCode = false, codeBuf = [], inTable = false, tableRows = [], inList = false;
+  let html = '', inCode = false, codeFenceLen = 0, codeBuf = [], inTable = false, tableRows = [], inList = false;
   const inline = s => {
     let out = esc(s).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>').replace(/\*([^*]+)\*/g, '<i>$1</i>');
     for (const m of marks) {
@@ -1842,13 +1842,24 @@ function renderMarkdown(rawText, sectionFindings) {
 
   for (const rawLine of lines) {
     const line = rawLine.trimEnd(), tr = line.trim();
-    if (tr.startsWith('```')) {
+    const fenceMatch = tr.match(/^(`{3,})(.*)$/);
+    if (!inCode && fenceMatch) {
       flushTable(); flushList();
-      if (!inCode) { inCode = true; codeBuf = []; }
-      else { html += `<pre class="codeblock">${inline(codeBuf.join('\n'))}</pre>`; inCode = false; }
+      inCode = true;
+      codeFenceLen = fenceMatch[1].length;
+      codeBuf = [];
       continue;
     }
-    if (inCode) { codeBuf.push(line); continue; }
+    if (inCode) {
+      if (fenceMatch && fenceMatch[1].length >= codeFenceLen && fenceMatch[2].trim() === '') {
+        html += `<pre class="codeblock">${esc(codeBuf.join('\n'))}</pre>`;
+        inCode = false;
+        codeFenceLen = 0;
+      } else {
+        codeBuf.push(line);
+      }
+      continue;
+    }
     if (tr.startsWith('|') && tr.endsWith('|')) { flushList(); inTable = true; tableRows.push(tr); continue; } else flushTable();
     const hMatch = tr.match(/^(#{1,4})\s+(.*)$/);
     if (hMatch) { flushList(); html += `<h${hMatch[1].length}>${inline(hMatch[2])}</h${hMatch[1].length}>`; continue; }
@@ -1863,7 +1874,7 @@ function renderMarkdown(rawText, sectionFindings) {
     html += `<p>${inline(line)}</p>`;
   }
   flushTable(); flushList();
-  if (inCode) html += `<pre class="codeblock">${inline(codeBuf.join('\n'))}</pre>`;
+  if (inCode) html += `<pre class="codeblock">${esc(codeBuf.join('\n'))}</pre>`;
   return html;
 }
 
