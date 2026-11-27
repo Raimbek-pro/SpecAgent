@@ -9,6 +9,13 @@
   ISO/IEC/IEEE 29148:2018 · IEEE 830 · PCI DSS · Комплаенс НБРК / АРРФР · RAG (Qdrant) · Event Sourcing (PostgreSQL)
 </p>
 
+<p align="center">
+  <img src="assets/ui-dark.jpg" alt="SpecAgent — Тёмная тема" width="100%" />
+</p>
+<p align="center">
+  <img src="assets/ui-light.jpg" alt="SpecAgent — Светлая тема" width="100%" />
+</p>
+
 ---
 
 ## Быстрый запуск (одной командой)
