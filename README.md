@@ -5,151 +5,89 @@
 <h1 align="center">SpecAgent</h1>
 
 <p align="center">
-  <strong>Multi-Agent FinTech Requirements Auditor &amp; Auto-Fixer</strong><br/>
-  ISO/IEC/IEEE 29148:2018 · IEEE 830 · PCI DSS · NBK / ARRFR Compliance · RAG (Qdrant) · Event Sourcing (PostgreSQL)
+  <strong>Мультиагентный FinTech-аудитор и автоисправитель технических заданий (ТЗ)</strong><br/>
+  ISO/IEC/IEEE 29148:2018 · IEEE 830 · PCI DSS · Комплаенс НБРК / АРРФР · RAG (Qdrant) · Event Sourcing (PostgreSQL)
 </p>
 
 ---
 
-## Overview
+## Быстрый запуск (одной командой)
 
-**SpecAgent** is a multi-agent AI workbench built in **C# / .NET 10** for auditing, scoring, and automatically rewriting banking & FinTech technical specifications (`.pdf`, `.docx`, `.md`, `.txt`).
+### Что понадобится
+- **Docker** (Docker Desktop или OrbStack на macOS) — для запуска всего стека (`PostgreSQL` + `Qdrant` + `API` + `Web UI`)
+- Бесплатный API-ключ **Google Gemini** (`GEMINI_API_KEY`) — используется и для LLM (`gemini-3.5-flash-lite` / `gemini-3.8-flash`), и для векторного поиска Qdrant (`gemini-embedding-001`)
+- *(Опционально)* **.NET 10 SDK** — для запуска в режиме CLI без Docker и прогона unit-тестов
 
-Unlike single-prompt LLM wrappers, SpecAgent runs a **4-level deterministic + multi-agent pipeline** backed by a **PostgreSQL Event Store**, **Qdrant semantic RAG**, and **pre-LLM PII masking/demasking**:
+### Шаг 1. Клонируйте репозиторий и перейдите в папку проекта
 
-1. **Ingestion & PII Masking (`SpecAgent.Ingestion`)**
-   - Layout-aware PDF parser (`PdfPig`) with ruled & borderless table extraction into Markdown tables.
-   - Word `.docx` parser (`DocumentFormat.OpenXml`) preserving headings and tables.
-   - Deterministic PII masker runs **before** any text leaves the perimeter: masks secrets/passwords, IBAN (`KZ...`), PAN (Luhn-validated), Kazakhstan IIN/BIN (mod-11 checksum), international & local phone numbers (`+1`, `+44`, `+7`, `+998`, `8...`), emails, and IPv4 addresses. Real PII is restored only at export/viewing time.
-2. **Parallel Multi-Agent Audit (`SpecAgent.Agents`)**
-   - **Supervisor Agent** classifies domain/complexity and routes sections to specialists.
-   - **Deterministic Rule Engine (`RuleBasedCritic`)** catches high-precision defects at zero token cost (e.g., mutating `GET` endpoints, HTTP 200 with `"result": "ERROR"`, `TBD`/stub sections).
-   - **Specialist Critics (parallel fan-out):** `logic`, `qa`, `compliance`, `distributed`, plus a single-call **Batch Checklist Agent** (`CHK-01`..`CHK-12`, ISO 29148).
-   - **Semantic RAG (`Qdrant` + `gemini-embedding-001`)** grounds findings in bank standards, ISO/IEC/IEEE 29148, and custom uploaded bank reference documents.
-3. **Grounding & Arbitration (`MetaCriticAgent`)**
-   - Verifies every finding's verbatim quote against the source document (rejecting hallucinations).
-   - Deduplicates overlapping findings, assigns final severity (`Blocker`, `Critical`, `Major`, `Minor`), and computes the **Quality Score (0–100)** + **Go / Conditional Go / No-Go** verdict.
-4. **Full-Document Auto-Patching & Native Export (`PatchLoop` + `DocumentExporter`)**
-   - Groups all findings per section and rewrites every flagged section into a production-ready version.
-   - Runs a `PatchWriter → PatchVerifier` verification loop on high-risk (`Blocker` / `Critical`) sections to ensure zero contradictions with neighboring sections.
-   - Exports the finished specification in its **original format**: clean **`.pdf`** (`QuestPDF` + Cyrillic `DejaVu Sans`), clean **`.docx`** (`OpenXML`), clean **`.md`**, plus the official audit **`report.md`**.
+```bash
+git clone https://github.com/Raimbek-pro/SpecAgent.git
+cd SpecAgent
+```
 
----
+### Шаг 2. Получите бесплатный `GEMINI_API_KEY` и создайте `.env`
 
-## What Was Built (AI Engineer Summary)
-
-- **LLM Gateway (`OpenAiCompatibleLlmClient`):** Universal OpenAI-compatible client (Google Gemini `gemini-3.5-flash-lite` / `gemini-3.8-flash`, Qwen/vLLM) with native Strict JSON Schema validation (`StrictJsonSchema.cs`), configurable concurrency, pacing, retries, and fallback routing.
-- **Knowledge Base & Semantic RAG (`SemanticKnowledgeBase` + `FreeEmbeddingClient`):** Qdrant vector search + local embedding cache + live bank reference document upload/deletion (`POST/DELETE /api/knowledge` supporting `.md`, `.txt`, `.pdf`, `.docx`).
-- **ISO 29148 & FinTech Standards:** Added `iso-29148-requirements-standard.md`, `mandatory-checklist.md`, `ChecklistAgent`, and expanded `RuleBasedCritic`.
-- **Token & Latency Optimization:** Smart Verifier fast-path (verifies `Blocker`/`Critical`, direct accept for `Major`/`Minor`), grouped per-section patching, compact `PatchWriter` prompts (`~2.5x–3x` faster and cheaper).
-- **Native Document Exporters (`DocumentExporter.cs`):** Real `.pdf` (`QuestPDF`) and `.docx` (`OpenXML`) generation with headings, bullet lists, code blocks, and bordered tables, plus configurable Gherkin inclusion (`IncludeGherkinInFixed`).
-- **Zed / Xcode-Inspired FinTech Workbench UI (`wwwroot/index.html`):**
-  - Locked 2-pane split workbench with resizable divider and collapsible project/history sidebar (`PostgreSQL` cache — reopens past audits at **0 LLM tokens**).
-  - Left pane: `Quality Score` executive summary + red-bordered flagged sections (click-to-jump to right pane) + **Original PDF / Document** viewer tab.
-  - Right pane: **Live 5-stage progress pipeline** with real-time agent pills during runs; once complete, **Fixed Sections** view with expandable rationale/proof/`@agent` Q&A + **Clean PDF / DOCX / Document** preview tab + format-matching download button.
-  - **Settings & RAG Modal (`⚙ Настройки и RAG`):** Live tuning for patch policies (`MinSeverity`, `MaxPatches`, `MaxRounds`, `Parallelism`, `IncludeGherkinInFixed`), RAG bank document management, PII toggles, LLM model/effort selection, and Admin vs. Analyst read-only RBAC mode.
-
----
-
-## Interactive Human-in-the-Loop (`@agent` Q&A)
-
-Every finding card in the right-hand audit pane includes an inline **Ask a Specialist** input box, allowing analysts and reviewers to interrogate any domain critic directly on a specific section of the specification:
-
-<p align="center">
-  <img src="assets/agent-qa-callout.png" alt="Interactive @agent Q&A inside a finding card" width="520" />
-</p>
-
-| Mention | Specialist Critic | Example Question |
-|---|---|---|
-| `@compliance` | Security, PCI DSS, NBK/ARRFR, PII, IDOR | `@compliance проверь этот эндпоинт на IDOR и PCI DSS` |
-| `@distributed` | Idempotency, timeouts, retries, Saga, races | `@distributed как защититься от двойного списания при таймауте?` |
-| `@logic` | State machines, API contracts, types, contradictions | `@logic есть ли противоречия со статусами в разделе 3?` |
-| `@qa` | Testability, Gherkin scenarios, SLA / NFR metrics | `@qa напиши негативные Given/When/Then сценарии для этого раздела` |
-
-**How it works under the hood (`POST /api/audits/{id}/ask`):**
-- **Full context awareness:** the chosen critic receives the exact section text, dynamically retrieved **Qdrant RAG** banking/ISO rules, confirmed findings for that section, and any generated patch.
-- **Zero PII leakage:** analyst questions are masked before reaching the LLM and answers are demasked on the way out.
-- **Full auditability:** both `HUMAN_QUESTION` and `AGENT_ANSWER` are appended to the session's PostgreSQL event log (also testable directly in **Scalar** at `/scalar/v1`).
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- **Docker** (Docker Desktop or OrbStack on macOS) — recommended for full stack (`PostgreSQL` + `Qdrant` + `API`)
-- Or **.NET 10 SDK** for local development & unit tests
-- API key:
-  - `GEMINI_API_KEY` (Google AI Studio — powers both fast `gemini-3.5-flash-lite` / `gemini-3.8-flash` LLM and `gemini-embedding-001` Qdrant semantic embeddings)
-
-### 1. Get a Free LLM API Key & Configure Environment Variables
-
-SpecAgent runs on the **free Google Gemini API** (`gemini-3.5-flash-lite` for fast parallel critics/patching + `gemini-3.8-flash` for arbitration/verification, plus `gemini-embedding-001` for RAG):
-
-1. Open **Google AI Studio**: https://aistudio.google.com/apikey
-2. Sign in with a Google account, click **Create API key**, and copy the generated key.
-3. Copy the example environment file (`.env` is gitignored — **never commit real keys**) and paste your key into `GEMINI_API_KEY`:
+1. Откройте **Google AI Studio**: https://aistudio.google.com/apikey
+2. Войдите через Google-аккаунт, нажмите **Create API key** и скопируйте ключ.
+3. Скопируйте шаблон переменных окружения (`.env` находится в `.gitignore` — **никогда не коммитьте реальные ключи**):
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` (loaded automatically by both Docker Compose and the local `dotnet run` CLI):
+4. Откройте `.env` и вставьте свой ключ в `GEMINI_API_KEY`:
 
 ```env
-GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_API_KEY=ваш_ключ_google_ai_studio
 ```
 
-### 2. Run Full Stack with Docker Compose (Recommended)
+### Шаг 3. Запустите проект одной командой
+
+Находясь **в корневой папке проекта (`SpecAgent`)**, выполните:
 
 ```bash
 docker compose up --build -d
 ```
 
-Services started:
-- **SpecAgent Web UI & API:** http://localhost:5199
-- **Interactive API Docs (Scalar):** http://localhost:5199/scalar/v1 (OpenAPI JSON: `/openapi/v1.json`)
+После запуска будут доступны:
+- **Веб-интерфейс и API SpecAgent:** http://localhost:5199
+- **Интерактивная документация API (Scalar):** http://localhost:5199/scalar/v1 (OpenAPI JSON: `/openapi/v1.json`)
 - **Health check:** http://localhost:5199/health
-- **Qdrant Dashboard:** http://localhost:6333/dashboard
+- **Панель Qdrant:** http://localhost:6333/dashboard
 - **PostgreSQL:** `localhost:5432` (`specagent` / `specagent`)
-- **Persistent volumes:** `pgdata` (PostgreSQL), `qdrant_data` (Qdrant), `specagent_uploads` (`/app/uploads`), and `specagent_knowledge` (`/app/knowledge`) survive `docker compose up --build`.
+- **Постоянные тома (volumes):** `pgdata` (PostgreSQL), `qdrant_data` (Qdrant), `specagent_uploads` (`/app/uploads`) и `specagent_knowledge` (`/app/knowledge`) сохраняются между пересборками.
 
-To rebuild only the API container after code changes (preserving PostgreSQL, Qdrant, uploads & custom RAG files):
+Пересборка только API-контейнера после правки кода (без потери данных в БД и RAG):
 
 ```bash
 docker compose up --build -d api
 ```
 
-### 3. Single-Command CLI Mode (BCC-HUB Submission)
+---
 
-Audit any `.pdf`, `.docx`, `.md`, or `.txt` specification with a single command and write the official demasked Markdown report (`report.md`):
+### Альтернатива: запуск CLI одной командой (без Docker)
 
-```bash
-cd doc1/prototype
-dotnet run --project src/SpecAgent.Api -- --input dataset/specs/bcc-card-expenses.md --output report.md
-```
-
-Or directly from the repository root:
+Проверить любой файл `.pdf`, `.docx`, `.md` или `.txt` одной командой из корня репозитория и получить готовый отчёт `report.md` (файл `.env` подхватывается автоматически):
 
 ```bash
-dotnet run --project doc1/prototype/src/SpecAgent.Api -- --input doc1/prototype/dataset/specs/p2p-transfers-tz.pdf --output report.md
+dotnet run --project doc1/prototype/src/SpecAgent.Api -- --input doc1/prototype/dataset/specs/bcc-card-expenses.md --output report.md
 ```
 
-Optional flags:
-- `--fixed <path>` — also export the auto-patched specification (`.md`, `.pdf`, or `.docx` chosen by file extension)
-- `--with-gherkin` — include Gherkin acceptance criteria in the `--fixed` output
-- `--help` — show CLI usage
+Дополнительные флаги:
+- `--fixed <путь>` — дополнительно сохранить исправленную версию ТЗ (`.md`, `.pdf` или `.docx` определяется по расширению)
+- `--with-gherkin` — включить сценарии Gherkin в исправленный файл `--fixed`
+- `--help` — справка по CLI
 
-### 4. Run Web UI Locally (Without Docker)
+### Локальный запуск Web UI (без Docker)
 
 ```bash
 cd doc1/prototype
 dotnet run --project src/SpecAgent.Api
 ```
 
-### 5. Run Unit Tests (0 LLM Tokens)
+### Запуск unit-тестов (0 токенов LLM)
 
-All unit tests use deterministic fakes and require no API keys:
+Все 50 unit-тестов используют детерминированные заглушки и не требуют API-ключей:
 
 ```bash
 cd doc1/prototype
@@ -158,48 +96,88 @@ dotnet test --nologo
 
 ---
 
-## Key API Endpoints
+## О проекте
 
-| Method | Endpoint | Description |
+**SpecAgent** — мультиагентная система на **C# / .NET 10** для аудита, скоринга и автоматического исправления банковских и FinTech технических заданий (`.pdf`, `.docx`, `.md`, `.txt`).
+
+В отличие от простых обёрток над одним промптом, SpecAgent выполняет **4-уровневый детерминированный + мультиагентный пайплайн** с хранением трассировки в **PostgreSQL Event Store**, семантическим **RAG в Qdrant** и **маскированием ПДн до отправки в LLM**:
+
+1. **Парсинг и маскирование ПДн (`SpecAgent.Ingestion`)**
+   - Layout-aware парсер PDF (`PdfPig`) с извлечением таблиц (с границами и без) в Markdown.
+   - Парсер Word `.docx` (`DocumentFormat.OpenXml`) с сохранением структуры заголовков и таблиц.
+   - Детерминированный PII-маскер срабатывает **до** выхода текста за периметр: маскирует секреты/пароли, IBAN (`KZ...`), PAN (валидация по алгоритму Луна), ИИН/БИН РК (контрольная сумма mod-11 и явные метки), международные и локальные телефоны (`+1`, `+44`, `+7`, `+998`, `8...`), email и IPv4. Реальные значения восстанавливаются только при просмотре и экспорте.
+2. **Параллельный мультиагентный аудит (`SpecAgent.Agents`)**
+   - **Supervisor Agent** определяет домен/сложность и маршрутизирует разделы к профильным агентам.
+   - **Детерминированный движок правил (`RuleBasedCritic`)** ловит критичные дефекты за 0 токенов (например, мутирующий `GET`, HTTP `200 OK` с `"result": "ERROR"`, незаполненные разделы-заглушки).
+   - **Профильные критики (параллельный fan-out):** `logic`, `qa`, `compliance`, `distributed` + единый **Batch Checklist Agent** (`CHK-01`..`CHK-12`, ISO 29148).
+   - **Кросс-секционный индекс (`DocumentIndex`)** сверяет статусы, эндпоинты, лимиты и SLA между разделами без траты токенов.
+   - **Семантический RAG (`Qdrant` + `gemini-embedding-001`)** подтягивает банковские стандарты, ISO/IEC/IEEE 29148 и загруженные вручную регламенты банка.
+3. **Проверка цитат и арбитраж (`MetaCriticAgent`)**
+   - Проверяет каждую цитату по исходному тексту документа (отсекая галлюцинации).
+   - Убирает дубликаты, назначает итоговую критичность (`Blocker`, `Critical`, `Major`, `Minor`), рассчитывает **Quality Score (0–100)** и вердикт **GO / УСЛОВНЫЙ GO / NO-GO**.
+4. **Автоисправление и нативный экспорт (`PatchLoop` + `DocumentExporter`)**
+   - Группирует замечания по разделам и переписывает каждый проблемный раздел в готовую к разработке редакцию.
+   - Запускает цикл верификации `PatchWriter → PatchVerifier` для `Blocker` / `Critical`, чтобы исключить новые противоречия с соседними разделами.
+   - Экспортирует исправленное ТЗ в **исходном формате**: чистый **`.pdf`** (`QuestPDF` + кириллический шрифт `DejaVu Sans`), чистый **`.docx`** (`OpenXML`), чистый **`.md`**, а также официальный отчёт **`report.md`**.
+
+---
+
+## Интерактивный режим Human-in-the-Loop (`@agent` Q&A)
+
+В каждой карточке замечания в правой панели есть встроенный чат с профильными агентами — аналитик может задать уточняющий вопрос по конкретному разделу ТЗ:
+
+<p align="center">
+  <img src="assets/agent-qa-callout.png" alt="Интерактивный чат @agent внутри карточки замечания" width="520" />
+</p>
+
+| Упоминание | Профильный агент | Пример вопроса |
 |---|---|---|
-| `GET` | `/health` | Service health check (anonymous) |
-| `GET` | `/metrics` | Prometheus metrics (`specagent_audits_*`, `specagent_llm_tokens_*`, `specagent_llm_cost_usd_total`) |
-| `GET` | `/api/me` | Authenticated user identity, role (`admin`/`analyst`), and auth mode (`jwt`/`demo`) |
-| `GET` | `/api/audits/recent` | List recent PostgreSQL audit sessions with score, token usage & estimated USD cost |
-| `POST` | `/api/audits` | Upload `.pdf`, `.docx`, `.md`, or `.txt` to start an audit |
-| `GET` | `/api/audits/{id}/events` | Live Server-Sent Events (SSE) execution trace |
-| `GET` | `/api/audits/{id}/document` | Demasked parsed document sections |
-| `GET` | `/api/audits/{id}` | Final audit report JSON (`findings`, `patches`, `qualityScore`) |
-| `POST` | `/api/audits/{id}/cancel` | Cancel an active, queued, or stuck audit session (`RUN_CANCELLED`) |
-| `POST` | `/api/audits/{id}/resume` | Resume a failed or cancelled audit session from its last saved step |
-| `POST` | `/api/audits/{id}/ask` | Human-in-the-loop multi-turn `@agent` Q&A on a specific section |
-| `GET` | `/api/audits/{id}/chat` | Persistent per-section `@agent` chat history (demasked) |
-| `GET` | `/api/audits/{id}/export/report.md` | Download official Markdown audit report |
-| `GET` | `/api/audits/{id}/export/fixed.md` | Download clean patched Markdown specification |
-| `GET` | `/api/audits/{id}/export/fixed.pdf` | View/download (`?download=1`) clean patched PDF |
-| `GET` | `/api/audits/{id}/export/fixed.docx` | Download clean patched Microsoft Word `.docx` |
-| `GET` | `/api/audits/{id}/original.pdf` | View original uploaded PDF (or rendered original) |
-| `GET` / `PUT` | `/api/settings` | Read (`AnalystOrAdmin`) / update (`AdminOnly`) runtime audit, PII, and model settings |
-| `GET` / `POST` / `DELETE` | `/api/knowledge` | List (`AnalystOrAdmin`) / upload & delete (`AdminOnly`) RAG reference documents |
-| `GET` | `/api/admin/audit-log` | Inspect PostgreSQL admin audit trail (`AdminOnly`) |
+| `@compliance` | ИБ, PCI DSS, НБРК / АРРФР, ПДн, IDOR | `@compliance проверь этот эндпоинт на IDOR и PCI DSS` |
+| `@distributed` | Идемпотентность, таймауты, ретраи, Saga, гонки | `@distributed как защититься от двойного списания при таймауте?` |
+| `@logic` | Машины состояний, API-контракты, типы, противоречия | `@logic есть ли противоречия со статусами в разделе 3?` |
+| `@qa` | Проверяемость, Gherkin-сценарии, SLA / NFR | `@qa напиши негативные Given/When/Then сценарии для этого раздела` |
 
-### Authentication & RBAC
-
-SpecAgent uses ASP.NET Core Authentication & Authorization policies (`AdminOnly`, `AnalystOrAdmin`):
-- **Production / Bank SSO (`Auth:Mode = Jwt` or `Auto` with `AUTH_AUTHORITY` / `JWT_SIGNING_KEY`):** validates JWT Bearer tokens (OIDC discovery for Keycloak / Entra ID, including `realm_access.roles`, or HS256 `JWT_SIGNING_KEY`). Header spoofing is rejected with `401 Unauthorized`; analysts receive `403 Forbidden` on admin endpoints.
-- **Local Demo (`Auth:Mode = Auto` with no IdP configured):** maps `X-SpecAgent-Role` through the same ASP.NET Core policy pipeline so the local workbench works out of the box.
-- Every change to Settings, PII rules, LLM routing, and RAG Knowledge Base is recorded in PostgreSQL table `admin_audit_log` (`migrations/002_admin_audit_log.sql`) and persisted across restarts in `system_settings` (`migrations/003_pii_vault_and_settings.sql`).
-- **Encrypted PII Vault (`PostgresPiiVault`):** when running with `EventStore=Postgres`, real PII values are encrypted at rest with **AES-256-GCM** (keyed via `PII_VAULT_KEY`) with automatic TTL retention purge (`PII_VAULT_TTL_DAYS=30`) so reopened sessions demask cleanly even after container restarts.
-- **Upload & API Hardening:** 25 MB upload size limit, magic-byte file verification (`%PDF-`, `PK\x03\x04`, non-binary text), per-user/IP sliding-window rate limiting (`429`), strict same-origin CORS, CSP, and `X-Content-Type-Options: nosniff`.
+**Как это работает (`POST /api/audits/{id}/ask`):**
+- **Полный контекст:** выбранный критик получает текст раздела, релевантные правила из **Qdrant RAG**, подтверждённые замечания, сгенерированный патч и историю диалога.
+- **Защита ПДн:** вопросы аналитика маскируются до отправки в LLM, а ответы демаскируются на выходе.
+- **Аудируемость:** события `HUMAN_QUESTION` и `AGENT_ANSWER` сохраняются в PostgreSQL (также доступно для тестирования в **Scalar** по адресу `/scalar/v1`).
 
 ---
 
-## Roadmap & Backend Handoff
+## Основные API-эндпоинты
 
-See [BACKEND_TODO.md](BACKEND_TODO.md) for the prioritized backend engineering backlog (enterprise RBAC/OIDC, encrypted PII Vault, persistent settings/storage, CLI single-command runner, and security hardening).
+| Метод | Эндпоинт | Описание |
+|---|---|---|
+| `GET` | `/health` | Проверка состояния сервиса (без авторизации) |
+| `GET` | `/metrics` | Метрики Prometheus (`specagent_audits_*`, `specagent_llm_tokens_*`, `specagent_llm_cost_usd_total`) |
+| `GET` | `/api/me` | Текущий пользователь, роль (`admin`/`analyst`) и режим авторизации (`jwt`/`demo`) |
+| `GET` | `/api/audits/recent` | Список последних аудитов из PostgreSQL (оценка, токены, стоимость в USD) |
+| `POST` | `/api/audits` | Загрузка `.pdf`, `.docx`, `.md` или `.txt` для запуска аудита |
+| `GET` | `/api/audits/{id}/events` | Поток событий выполнения в реальном времени (SSE) |
+| `GET` | `/api/audits/{id}/document` | Демаскированные разделы распарсенного документа |
+| `GET` | `/api/audits/{id}` | Итоговый JSON-отчёт аудита (`findings`, `patches`, `qualityScore`) |
+| `POST` | `/api/audits/{id}/cancel` | Отмена активной или зависшей сессии аудита (`RUN_CANCELLED`) |
+| `POST` | `/api/audits/{id}/resume` | Возобновление прерванного аудита с последнего сохранённого шага |
+| `POST` | `/api/audits/{id}/ask` | Многоходовый диалог `@agent` по конкретному разделу |
+| `GET` | `/api/audits/{id}/chat` | Сохранённая история чата `@agent` по разделу (демаскированная) |
+| `GET` | `/api/audits/{id}/export/report.md` | Скачать официальный Markdown-отчёт о проверке |
+| `GET` | `/api/audits/{id}/export/fixed.md` | Скачать исправленное ТЗ в Markdown |
+| `GET` | `/api/audits/{id}/export/fixed.pdf` | Просмотр/скачивание (`?download=1`) исправленного ТЗ в PDF |
+| `GET` | `/api/audits/{id}/export/fixed.docx` | Скачать исправленное ТЗ в Microsoft Word `.docx` |
+| `GET` | `/api/audits/{id}/original.pdf` | Просмотр исходного PDF-документа |
+| `GET` / `PUT` | `/api/settings` | Чтение (`AnalystOrAdmin`) / изменение (`AdminOnly`) настроек аудита, ПДн и моделей |
+| `GET` / `POST` / `DELETE` | `/api/knowledge` | Просмотр (`AnalystOrAdmin`) / загрузка и удаление (`AdminOnly`) документов базы знаний RAG |
+| `GET` | `/api/admin/audit-log` | Журнал административных изменений в PostgreSQL (`AdminOnly`) |
+
+### Безопасность, авторизация и RBAC
+
+- **Продакшн / Банковский SSO (`Auth:Mode = Jwt` или `Auto` с `AUTH_AUTHORITY` / `JWT_SIGNING_KEY`):** проверка JWT Bearer (OIDC discovery для Keycloak / Entra ID, включая `realm_access.roles`, или HS256 `JWT_SIGNING_KEY`). Подмена заголовков отклоняется с `401 Unauthorized`, аналитики получают `403 Forbidden` на административных эндпоинтах.
+- **Локальное демо (`Auth:Mode = Auto` без IdP):** роль из `X-SpecAgent-Role` проходит через те же политики ASP.NET Core (`AdminOnly`, `AnalystOrAdmin`), чтобы интерфейс работал из коробки.
+- **Шифрованное хранилище ПДн (`PostgresPiiVault`):** при работе с PostgreSQL значения ПДн шифруются алгоритмом **AES-256-GCM** (`PII_VAULT_KEY`) с автоматической очисткой по TTL (`PII_VAULT_TTL_DAYS=30`).
+- **Журнал аудита и защита API:** все изменения настроек и RAG логируются в `admin_audit_log`; включены лимит загрузки 25 МБ, проверка magic-bytes файлов (`%PDF-`, `PK\x03\x04`), rate limiting (`429`), строгий same-origin CORS и CSP.
 
 ---
 
-## License
+## Лицензия
 
-This project is licensed under the [MIT License](LICENSE).
+Проект распространяется под лицензией [MIT License](LICENSE).
