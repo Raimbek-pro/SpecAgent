@@ -43,6 +43,8 @@ public class EndpointExportAndTelemetryTests
                 builder.UseSetting("EventStore", "InMemory");
                 builder.UseSetting("Knowledge:Path", tempKb);
                 builder.UseSetting("Auth:Mode", "Demo");
+                builder.UseSetting("ModelRouting:Agents:meta-critic:Model", "gemini-3.8-flash");
+                builder.UseSetting("ModelRouting:Agents:patch-verifier:Model", "gemini-3.8-flash");
                 builder.ConfigureServices(services =>
                 {
                     services.Replace(ServiceDescriptor.Singleton<ILlmClient, FakeLlmClient>());
