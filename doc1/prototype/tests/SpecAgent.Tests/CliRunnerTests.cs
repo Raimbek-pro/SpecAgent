@@ -70,9 +70,12 @@ public class CliRunnerTests
 
             var reportMd = await File.ReadAllTextAsync(reportPath);
             Assert.Contains("## 1. Паспорт прогона", reportMd);
+            Assert.Contains("**Версия агента**", reportMd);
             Assert.Contains("## 2. Как агент нарезал требования", reportMd);
             Assert.Contains("## 3. Сводка нарушений", reportMd);
             Assert.Contains("## 4. Детальный разбор дефектов", reportMd);
+            Assert.Contains("### 4.1. Проверка каждого требования", reportMd);
+            Assert.Contains("### 4.2. Проверка всего набора требований", reportMd);
             Assert.Contains("## 5. Итог и вердикт (Go / No-Go)", reportMd);
             Assert.Contains("p2p-transfer-bad.md", reportMd);
             // PII from section 5.2 must be demasked back in the final report table.

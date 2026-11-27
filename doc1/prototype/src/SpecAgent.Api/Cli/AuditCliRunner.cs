@@ -213,9 +213,7 @@ public static class AuditCliRunner
         var demaskedDoc = await masker.DemaskAsync(sessionId, masked, ct);
         var demaskedReport = await masker.DemaskAsync(sessionId, ready.Get<AuditReport>(), includeFindings: true, ct);
 
-        var modelName = modelRouting?.Value.Default.Model
-                        ?? config["ModelRouting:Default:Model"]
-                        ?? "deterministic-rules";
+        var modelName = FormatModelSummary(modelRouting?.Value, config);
         var markdown = ToolGateway.RenderReportMarkdown(demaskedDoc, demaskedReport, modelName);
 
         EnsureParentDirectory(options.OutputPath);
@@ -312,6 +310,26 @@ public static class AuditCliRunner
         }
         value = null;
         return false;
+    }
+
+    public static string FormatModelSummary(ModelRoutingOptions? routing, IConfiguration config)
+    {
+        var defaultModel = routing?.Default.Model
+                           ?? config["ModelRouting:Default:Model"]
+                           ?? "deterministic-rules";
+        if (routing?.Agents is not { Count: > 0 } agents)
+            return defaultModel;
+
+        var overrides = agents
+            .Where(kv => !string.IsNullOrWhiteSpace(kv.Value.Model) &&
+                         !string.Equals(kv.Value.Model, defaultModel, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(kv => kv.Value.Model, StringComparer.OrdinalIgnoreCase)
+            .Select(g => $"{g.Key} ({string.Join(", ", g.Select(x => x.Key).OrderBy(k => k))})")
+            .ToList();
+
+        return overrides.Count == 0
+            ? defaultModel
+            : $"{defaultModel} + {string.Join("; ", overrides)}";
     }
 
     private static void EnsureParentDirectory(string filePath)

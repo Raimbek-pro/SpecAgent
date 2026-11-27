@@ -82,15 +82,19 @@ Every finding card in the right-hand audit pane includes an inline **Ask a Speci
 - API key:
   - `GEMINI_API_KEY` (Google AI Studio — powers both fast `gemini-3.5-flash-lite` / `gemini-3.8-flash` LLM and `gemini-embedding-001` Qdrant semantic embeddings)
 
-### 1. Configure Environment Variables
+### 1. Get a Free LLM API Key & Configure Environment Variables
 
-Copy the example environment file and add your keys (`.env` is gitignored — **never commit real keys**):
+SpecAgent runs on the **free Google Gemini API** (`gemini-3.5-flash-lite` for fast parallel critics/patching + `gemini-3.8-flash` for arbitration/verification, plus `gemini-embedding-001` for RAG):
+
+1. Open **Google AI Studio**: https://aistudio.google.com/apikey
+2. Sign in with a Google account, click **Create API key**, and copy the generated key.
+3. Copy the example environment file (`.env` is gitignored — **never commit real keys**) and paste your key into `GEMINI_API_KEY`:
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env`:
+Edit `.env` (loaded automatically by both Docker Compose and the local `dotnet run` CLI):
 
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here

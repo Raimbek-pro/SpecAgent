@@ -380,7 +380,7 @@ api.MapPost("/{id}/cancel", async (string id, ClaimsPrincipal user, AuthOptions 
 }).WithSummary("Cancel an active, queued, or stuck audit session");
 
 // 8. Export official BCC-HUB Markdown audit report (demasked).
-api.MapGet("/{id}/export/report.md", async (string id, IEventStore events, PiiMasker masker, IConfiguration config, CancellationToken ct) =>
+api.MapGet("/{id}/export/report.md", async (string id, IEventStore events, PiiMasker masker, IOptions<ModelRoutingOptions> modelOpts, IConfiguration config, CancellationToken ct) =>
 {
     var log = await events.ReadAsync(id, ct: ct);
     var state = AuditState.From(log);
@@ -390,7 +390,7 @@ api.MapGet("/{id}/export/report.md", async (string id, IEventStore events, PiiMa
     var demaskedDoc = await masker.DemaskAsync(id, doc, ct);
     var demaskedReport = await masker.DemaskAsync(id, ready.Get<AuditReport>(), includeFindings: true, ct);
 
-    var model = config["ModelRouting:Default:Model"] ?? "gemini-flash-lite-latest";
+    var model = AuditCliRunner.FormatModelSummary(modelOpts.Value, config);
     var md = ToolGateway.RenderReportMarkdown(demaskedDoc, demaskedReport, model);
     var baseName = Path.GetFileNameWithoutExtension(doc.SourceFileName);
     return Results.File(Encoding.UTF8.GetBytes(md), "text/markdown; charset=utf-8", $"{baseName}-report.md");

@@ -41,8 +41,71 @@ public sealed class ToolGateway(IEventStore events, IKnowledgeBase kb)
         return result;
     }
 
+    /// <summary>Resolves the current SpecAgent version (git short commit or assembly version) for the report passport.</summary>
+    public static string ResolveAgentVersion()
+    {
+        var fromEnv = Environment.GetEnvironmentVariable("SPECAGENT_VERSION");
+        if (!string.IsNullOrWhiteSpace(fromEnv))
+            return fromEnv.Trim();
+
+        foreach (var root in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+        {
+            var dir = new DirectoryInfo(root);
+            while (dir is not null)
+            {
+                var gitHead = Path.Combine(dir.FullName, ".git", "HEAD");
+                if (File.Exists(gitHead))
+                {
+                    try
+                    {
+                        var head = File.ReadAllText(gitHead).Trim();
+                        string? sha = null;
+                        if (head.StartsWith("ref:", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var refPath = head[4..].Trim().Replace('/', Path.DirectorySeparatorChar);
+                            var fullRef = Path.Combine(dir.FullName, ".git", refPath);
+                            if (File.Exists(fullRef))
+                            {
+                                sha = File.ReadAllText(fullRef).Trim();
+                            }
+                            else
+                            {
+                                var packed = Path.Combine(dir.FullName, ".git", "packed-refs");
+                                if (File.Exists(packed))
+                                {
+                                    var refKey = head[4..].Trim();
+                                    foreach (var line in File.ReadLines(packed))
+                                    {
+                                        if (line.Length > 41 && !line.StartsWith('#') && line.EndsWith(refKey, StringComparison.Ordinal))
+                                        {
+                                            sha = line.Split(' ')[0].Trim();
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else if (head.Length >= 7)
+                        {
+                            sha = head;
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(sha) && sha.Length >= 7)
+                            return $"SpecAgent (commit `{sha[..7]}`)";
+                    }
+                    catch { /* fallback to assembly version */ }
+                    break;
+                }
+                dir = dir.Parent;
+            }
+        }
+
+        var ver = typeof(ToolGateway).Assembly.GetName().Version;
+        return ver is not null ? $"SpecAgent v{ver.Major}.{ver.Minor}.{ver.Build}" : "SpecAgent";
+    }
+
     /// <summary>Renders an official BCC-HUB Markdown audit report (ISO 29148 / IEEE 830).</summary>
-    public static string RenderReportMarkdown(TzDocument doc, AuditReport report, string modelName)
+    public static string RenderReportMarkdown(TzDocument doc, AuditReport report, string modelName, string? agentVersion = null)
     {
         var sb = new StringBuilder();
         var blockers = report.Findings.Count(f => f.Severity == Severity.Blocker);
@@ -55,6 +118,8 @@ public sealed class ToolGateway(IEventStore events, IKnowledgeBase kb)
                 ? "**УСЛОВНЫЙ GO** — требуется устранить критическое замечание до релиза."
                 : "**GO** — документ пригоден для передачи в разработку.";
 
+        var version = string.IsNullOrWhiteSpace(agentVersion) ? ResolveAgentVersion() : agentVersion;
+
         sb.AppendLine($"# Отчёт о проверке требований: {doc.Title}");
         sb.AppendLine();
         sb.AppendLine("## 1. Паспорт прогона");
@@ -62,6 +127,7 @@ public sealed class ToolGateway(IEventStore events, IKnowledgeBase kb)
         sb.AppendLine("| :--- | :--- |");
         sb.AppendLine($"| **Документ** | `{doc.SourceFileName}` ({doc.Title}) |");
         sb.AppendLine($"| **Дата прогона (UTC)** | {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} |");
+        sb.AppendLine($"| **Версия агента** | {version} |");
         sb.AppendLine($"| **Сессия** | `{report.SessionId}` |");
         sb.AppendLine($"| **Домен** | {report.Domain} |");
         sb.AppendLine($"| **Модель** | `{modelName}` |");
@@ -77,28 +143,66 @@ public sealed class ToolGateway(IEventStore events, IKnowledgeBase kb)
         sb.AppendLine();
 
         sb.AppendLine("## 2. Как агент нарезал требования");
-        sb.AppendLine("| ID в отчёте | Раздел документа | Краткая формулировка |");
+        sb.AppendLine("| ID в отчёте | ID / раздел в документе | Краткая формулировка |");
         sb.AppendLine("| :--- | :--- | :--- |");
         foreach (var s in doc.Sections)
         {
-            var snippet = s.Text.Replace("\r", "").Replace("\n", " ").Replace("|", "\\|");
-            if (snippet.Length > 110) snippet = snippet[..110] + "…";
-            sb.AppendLine($"| `{s.Id}` | {s.Title.Replace("|", "\\|")} | {snippet} |");
+            var docRef = string.IsNullOrWhiteSpace(s.Title) ? s.Id : s.Title.Replace("|", "\\|");
+            var snippet = s.Text.Replace("\r", "").Replace("\n", " ").Replace("|", "\\|").Trim();
+            if (snippet.Length == 0) snippet = "*(заголовок раздела)*";
+            else if (snippet.Length > 110) snippet = snippet[..110] + "…";
+            sb.AppendLine($"| `{s.Id}` | {docRef} | {snippet} |");
         }
         sb.AppendLine();
 
+        var findingsBySection = report.Findings
+            .GroupBy(f => f.SectionId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToList(), StringComparer.OrdinalIgnoreCase);
+
+        var contentSections = doc.Sections.Where(s => !string.IsNullOrWhiteSpace(s.Text)).ToList();
+        var cleanSectionsCount = contentSections.Count(s => !findingsBySection.ContainsKey(s.Id));
+
         sb.AppendLine("## 3. Сводка нарушений (ISO/IEC/IEEE 29148 & IEEE 830)");
-        sb.AppendLine($"- **Разделов проверено:** {doc.Sections.Count}");
+        sb.AppendLine($"- **Разделов / требований нарезано:** {doc.Sections.Count} (содержательных: {contentSections.Count}, без замечаний: {cleanSectionsCount})");
         sb.AppendLine($"- **Всего подтверждённых дефектов:** {report.Findings.Count} (Blocker: {blockers}, Critical: {criticals}, Major: {majors}, Minor: {minors})");
         sb.AppendLine($"- **Отброшено неподтверждённых/дублей:** {report.RejectedRawFindingIds.Count}");
         sb.AppendLine($"- **Сгенерировано патчей:** {report.Patches.Count} (верифицировано: {report.Patches.Count(p => p.Verified)})");
+
+        var criticalDefects = report.Findings.Where(f => f.Severity is Severity.Blocker or Severity.Critical).ToList();
+        if (criticalDefects.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("**Список критичных дефектов (Blocker / Critical):**");
+            foreach (var f in criticalDefects)
+                sb.AppendLine($"- **[{f.Severity}] {f.Id} (`{f.SectionId}`):** {f.Title}");
+        }
         sb.AppendLine();
 
         sb.AppendLine("## 4. Детальный разбор дефектов");
+        sb.AppendLine();
+        sb.AppendLine("### 4.1. Проверка каждого требования");
+        sb.AppendLine("| ID | Раздел / требование | Статус | Выявленные дефекты |");
+        sb.AppendLine("| :--- | :--- | :--- | :--- |");
+        foreach (var s in contentSections)
+        {
+            var label = string.IsNullOrWhiteSpace(s.Title) ? s.Id : s.Title.Replace("|", "\\|");
+            if (findingsBySection.TryGetValue(s.Id, out var secFindings) && secFindings.Count > 0)
+            {
+                var maxSev = secFindings.Max(f => f.Severity);
+                var refs = string.Join(", ", secFindings.Select(f => $"{f.Id} [{f.Severity}]"));
+                sb.AppendLine($"| `{s.Id}` | {label} | Нарушения ({maxSev}) | {refs} |");
+            }
+            else
+            {
+                sb.AppendLine($"| `{s.Id}` | {label} | OK | Замечаний не выявлено |");
+            }
+        }
+        sb.AppendLine();
+
         var patches = report.Patches.ToDictionary(p => p.FindingId);
         foreach (var f in report.Findings)
         {
-            sb.AppendLine($"### [{f.Severity}] {f.Id} — {f.Title} (раздел `{f.SectionId}`)");
+            sb.AppendLine($"#### [{f.Severity}] {f.Id} — {f.Title} (раздел `{f.SectionId}`)");
             sb.AppendLine($"- **Агенты:** {string.Join(", ", f.Agents)}");
             if (!string.IsNullOrWhiteSpace(f.StandardRef))
                 sb.AppendLine($"- **Стандарт:** {f.StandardRef}");
@@ -125,6 +229,40 @@ public sealed class ToolGateway(IEventStore events, IKnowledgeBase kb)
             }
             sb.AppendLine();
         }
+
+        sb.AppendLine("### 4.2. Проверка всего набора требований");
+        var consistencyFindings = report.Findings.Where(f =>
+            f.Agents.Contains("logic", StringComparer.OrdinalIgnoreCase) ||
+            (f.StandardRef?.Contains("Consistency", StringComparison.OrdinalIgnoreCase) ?? false) ||
+            f.Title.Contains("противореч", StringComparison.OrdinalIgnoreCase) ||
+            f.Title.Contains("согласован", StringComparison.OrdinalIgnoreCase) ||
+            f.Title.Contains("типов", StringComparison.OrdinalIgnoreCase) ||
+            f.Title.Contains("HTTP", StringComparison.OrdinalIgnoreCase) ||
+            f.Title.Contains("статус", StringComparison.OrdinalIgnoreCase)).ToList();
+        var completenessFindings = report.Findings.Where(f =>
+            f.Agents.Contains("distributed", StringComparer.OrdinalIgnoreCase) ||
+            f.Agents.Contains("compliance", StringComparer.OrdinalIgnoreCase) ||
+            (f.StandardRef?.Contains("Completeness", StringComparison.OrdinalIgnoreCase) ?? false) ||
+            f.Title.Contains("отсутств", StringComparison.OrdinalIgnoreCase) ||
+            f.Title.Contains("заглуш", StringComparison.OrdinalIgnoreCase) ||
+            f.Title.Contains("TBD", StringComparison.OrdinalIgnoreCase)).ToList();
+        var verifiabilityFindings = report.Findings.Where(f =>
+            f.Agents.Contains("qa", StringComparer.OrdinalIgnoreCase) ||
+            (f.StandardRef?.Contains("Unambiguous", StringComparison.OrdinalIgnoreCase) ?? false) ||
+            (f.StandardRef?.Contains("Verifiable", StringComparison.OrdinalIgnoreCase) ?? false) ||
+            f.Title.Contains("размыт", StringComparison.OrdinalIgnoreCase) ||
+            f.Title.Contains("NFR", StringComparison.OrdinalIgnoreCase) ||
+            f.Title.Contains("тестирован", StringComparison.OrdinalIgnoreCase)).ToList();
+
+        static string FormatRefs(List<Finding> list) => list.Count == 0
+            ? "критичных системных расхождений не выявлено."
+            : $"выявлено {list.Count} замечаний — " + string.Join("; ", list.Select(f => $"{f.Id} (`{f.SectionId}`, {f.Severity})")) + ".";
+
+        sb.AppendLine($"- **Согласованность набора (ISO/IEC/IEEE 29148 п. 5.2.6 / IEEE 830 п. 4.3.4):** {FormatRefs(consistencyFindings)}");
+        sb.AppendLine($"- **Полнота и интеграционная готовность (ISO/IEC/IEEE 29148 п. 5.2.6 / IEEE 830 п. 4.3.3):** {FormatRefs(completenessFindings)}");
+        sb.AppendLine($"- **Проверяемость и однозначность формулировок (ISO/IEC/IEEE 29148 п. 5.2.5 / IEEE 830 п. 4.3.2):** {FormatRefs(verifiabilityFindings)}");
+        sb.AppendLine($"- **Покрытие автоисправлениями:** сгенерировано {report.Patches.Count} патчей для {patchedSections.Count} проблемных разделов (из {findingsBySection.Count} разделов с замечаниями).");
+        sb.AppendLine();
 
         sb.AppendLine("## 5. Итог и вердикт (Go / No-Go)");
         sb.AppendLine(goNoGo);
