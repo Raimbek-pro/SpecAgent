@@ -216,15 +216,19 @@ public sealed class ToolGateway(IEventStore events, IKnowledgeBase kb)
             if (patches.TryGetValue(f.Id, out var p))
             {
                 sb.AppendLine($"- **Исправление (патч, {(p.Verified ? "верифицирован" : "требует ручной проверки")}, раундов: {p.Rounds}):**");
-                sb.AppendLine("```markdown");
-                sb.AppendLine(p.After.Trim());
-                sb.AppendLine("```");
+                var patchBody = p.After.Trim();
+                var patchFence = FenceFor(patchBody);
+                sb.AppendLine($"{patchFence}markdown");
+                sb.AppendLine(patchBody);
+                sb.AppendLine(patchFence);
                 if (!string.IsNullOrWhiteSpace(p.Gherkin))
                 {
+                    var gherkinBody = p.Gherkin.Trim();
+                    var gherkinFence = FenceFor(gherkinBody);
                     sb.AppendLine("- **Критерии приёмки (Gherkin):**");
-                    sb.AppendLine("```gherkin");
-                    sb.AppendLine(p.Gherkin.Trim());
-                    sb.AppendLine("```");
+                    sb.AppendLine($"{gherkinFence}gherkin");
+                    sb.AppendLine(gherkinBody);
+                    sb.AppendLine(gherkinFence);
                 }
             }
             sb.AppendLine();
@@ -346,6 +350,25 @@ public sealed class ToolGateway(IEventStore events, IKnowledgeBase kb)
             ? r : "(knowledge base: nothing relevant)";
 
     private static string Trim(string s, int n) => s.Length <= n ? s : s[..n] + "…";
+
+    private static string FenceFor(string content)
+    {
+        var maxRun = 0;
+        var run = 0;
+        foreach (var ch in content)
+        {
+            if (ch == '`')
+            {
+                run++;
+                if (run > maxRun) maxRun = run;
+            }
+            else
+            {
+                run = 0;
+            }
+        }
+        return new string('`', Math.Max(3, maxRun + 1));
+    }
 }
 
 public sealed class ToolError(string message) : Exception(message);
