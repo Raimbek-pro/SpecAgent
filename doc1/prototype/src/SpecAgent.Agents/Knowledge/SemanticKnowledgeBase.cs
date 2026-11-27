@@ -82,7 +82,7 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
         {
             try
             {
-                var hits = await _qdrant.SearchAsync(CollectionName, qVec, limit: (ulong)top);
+                var hits = await _qdrant.QueryAsync(CollectionName, qVec, limit: (ulong)top);
                 if (hits.Count > 0)
                 {
                     return hits.Select(h => new KbSnippet(
