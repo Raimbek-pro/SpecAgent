@@ -144,10 +144,10 @@ public class SecurityAndPersistenceTests
         var sessionId = $"s-vault-{Guid.NewGuid():N}"[..18];
         const string original = "ИИН 900101300037, карта 4111 1111 1111 1111, счёт KZ86125KZT5004100100, тел. +7 701 123 45 67";
 
-        var masked = new PiiMasker(vault1).Mask(sessionId, original);
+        var masked = await new PiiMasker(vault1).MaskAsync(sessionId, original);
         Assert.DoesNotContain("900101300037", masked);
         Assert.DoesNotContain("4111 1111", masked);
-        Assert.Equal(4, vault1.Count(sessionId));
+        Assert.Equal(4, await vault1.CountAsync(sessionId));
 
         // Verify plaintext is NOT stored anywhere in ciphertext column.
         await using (var cmd = dataSource.CreateCommand("SELECT ciphertext FROM pii_vault_entries WHERE session_id = @s"))
@@ -167,10 +167,10 @@ public class SecurityAndPersistenceTests
 
         // Simulate API container restart: brand-new PostgresPiiVault instance with the same key.
         var vault2 = new PostgresPiiVault(dataSource, key, ttlDays: 30);
-        Assert.Equal(original, new PiiMasker(vault2).Demask(sessionId, masked));
+        Assert.Equal(original, await new PiiMasker(vault2).DemaskAsync(sessionId, masked));
 
         // Session isolation: another session must NOT demask this session's tokens.
-        Assert.Equal(masked, new PiiMasker(vault2).Demask("other-session-id", masked));
+        Assert.Equal(masked, await new PiiMasker(vault2).DemaskAsync("other-session-id", masked));
 
         // TTL expiry + purge test.
         await using (var expireCmd = dataSource.CreateCommand(
@@ -179,7 +179,7 @@ public class SecurityAndPersistenceTests
             expireCmd.Parameters.AddWithValue("s", sessionId);
             await expireCmd.ExecuteNonQueryAsync();
         }
-        Assert.Equal(0, vault2.Count(sessionId));
+        Assert.Equal(0, await vault2.CountAsync(sessionId));
         var purged = await vault2.PurgeExpiredAsync();
         Assert.True(purged >= 4);
     }

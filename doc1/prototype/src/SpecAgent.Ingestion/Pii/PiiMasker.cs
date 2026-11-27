@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
+using System.Text;
 using System.Text.RegularExpressions;
 using SpecAgent.Core.Documents;
+using SpecAgent.Core.Findings;
 
 namespace SpecAgent.Ingestion.Pii;
 
@@ -42,35 +44,112 @@ public sealed partial class PiiMasker(IPiiVault vault)
     public bool Enabled { get; set; } = true;
     public HashSet<string> EnabledKinds { get; set; } = new(AllKinds, StringComparer.OrdinalIgnoreCase);
 
-    public TzDocument Mask(string sessionId, TzDocument doc) => !Enabled ? doc : doc with
+    public async Task<TzDocument> MaskAsync(string sessionId, TzDocument doc, CancellationToken ct = default)
     {
-        Title = Mask(sessionId, doc.Title),
-        Sections = doc.Sections.Select(s => s with { Title = Mask(sessionId, s.Title), Text = Mask(sessionId, s.Text) }).ToList(),
-    };
+        if (!Enabled) return doc;
+        var title = await MaskAsync(sessionId, doc.Title, ct);
+        var sections = new List<TzSection>(doc.Sections.Count);
+        foreach (var s in doc.Sections)
+        {
+            sections.Add(s with
+            {
+                Title = await MaskAsync(sessionId, s.Title, ct),
+                Text = await MaskAsync(sessionId, s.Text, ct),
+            });
+        }
+        return doc with { Title = title, Sections = sections };
+    }
 
-    public string Mask(string sessionId, string text)
+    public async Task<string> MaskAsync(string sessionId, string text, CancellationToken ct = default)
     {
-        if (!Enabled) return text;
+        if (!Enabled || string.IsNullOrEmpty(text)) return text;
         var kinds = EnabledKinds;
         if (kinds.Contains("IIN"))
         {
-            text = LabeledIin().Replace(text, m =>
-                m.Groups[1].Value + vault.Tokenize(sessionId, "IIN", m.Groups[2].Value));
+            text = await ReplaceAsync(text, LabeledIin(), async m =>
+                m.Groups[1].Value + await vault.TokenizeAsync(sessionId, "IIN", m.Groups[2].Value, ct));
         }
         foreach (var rule in Rules)
         {
             if (!kinds.Contains(rule.Kind)) continue;
-            text = rule.Pattern.Replace(text, m =>
+            text = await ReplaceAsync(text, rule.Pattern, async m =>
             {
                 if (m.Value.StartsWith('[')) return m.Value;
                 if (rule.Validate is { } validate && !validate(m.Value)) return m.Value;
-                return vault.Tokenize(sessionId, rule.Kind, m.Value);
+                return await vault.TokenizeAsync(sessionId, rule.Kind, m.Value, ct);
             });
         }
         return text;
     }
 
-    public string Demask(string sessionId, string text) => vault.Detokenize(sessionId, text);
+    public Task<string> DemaskAsync(string sessionId, string text, CancellationToken ct = default) =>
+        vault.DetokenizeAsync(sessionId, text, ct);
+
+    public async Task<TzDocument> DemaskAsync(string sessionId, TzDocument doc, CancellationToken ct = default)
+    {
+        var title = await DemaskAsync(sessionId, doc.Title, ct);
+        var sections = new List<TzSection>(doc.Sections.Count);
+        foreach (var s in doc.Sections)
+        {
+            sections.Add(s with
+            {
+                Title = await DemaskAsync(sessionId, s.Title, ct),
+                Text = await DemaskAsync(sessionId, s.Text, ct),
+            });
+        }
+        return doc with { Title = title, Sections = sections };
+    }
+
+    public async Task<AuditReport> DemaskAsync(string sessionId, AuditReport report, bool includeFindings = true, CancellationToken ct = default)
+    {
+        IReadOnlyList<Finding> findings = report.Findings;
+        if (includeFindings)
+        {
+            var demaskedFindings = new List<Finding>(report.Findings.Count);
+            foreach (var f in report.Findings)
+            {
+                demaskedFindings.Add(f with
+                {
+                    Quote = await DemaskAsync(sessionId, f.Quote, ct),
+                    Title = await DemaskAsync(sessionId, f.Title, ct),
+                    Description = await DemaskAsync(sessionId, f.Description, ct),
+                    Recommendation = await DemaskAsync(sessionId, f.Recommendation, ct),
+                    Rationale = await DemaskAsync(sessionId, f.Rationale, ct),
+                });
+            }
+            findings = demaskedFindings;
+        }
+
+        var patches = new List<Patch>(report.Patches.Count);
+        foreach (var p in report.Patches)
+        {
+            patches.Add(p with
+            {
+                Before = await DemaskAsync(sessionId, p.Before, ct),
+                After = await DemaskAsync(sessionId, p.After, ct),
+                Gherkin = await DemaskAsync(sessionId, p.Gherkin, ct),
+            });
+        }
+
+        return report with { Findings = findings, Patches = patches };
+    }
+
+    private static async Task<string> ReplaceAsync(string input, Regex regex, Func<Match, Task<string>> evaluator)
+    {
+        var matches = regex.Matches(input);
+        if (matches.Count == 0) return input;
+
+        var sb = new StringBuilder(input.Length);
+        var lastIndex = 0;
+        foreach (Match m in matches)
+        {
+            sb.Append(input, lastIndex, m.Index - lastIndex);
+            sb.Append(await evaluator(m));
+            lastIndex = m.Index + m.Length;
+        }
+        sb.Append(input, lastIndex, input.Length - lastIndex);
+        return sb.ToString();
+    }
 
     private static string Digits(string s) => new(s.Where(char.IsDigit).ToArray());
 
@@ -102,9 +181,9 @@ public sealed partial class PiiMasker(IPiiVault vault)
 /// <summary>token ↔ value map. The ONLY component that holds real PII.</summary>
 public interface IPiiVault
 {
-    string Tokenize(string sessionId, string kind, string value);
-    string Detokenize(string sessionId, string text);
-    int Count(string sessionId);
+    Task<string> TokenizeAsync(string sessionId, string kind, string value, CancellationToken ct = default);
+    Task<string> DetokenizeAsync(string sessionId, string text, CancellationToken ct = default);
+    Task<int> CountAsync(string sessionId, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -124,26 +203,32 @@ public sealed partial class InMemoryPiiVault : IPiiVault
 
     [GeneratedRegex(@"\[(?:SECRET|IBAN|PAN|IIN|PHONE|EMAIL|IP)_\d+\]")] private static partial Regex Token();
 
-    public string Tokenize(string sessionId, string kind, string value)
+    public Task<string> TokenizeAsync(string sessionId, string kind, string value, CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         var v = _vaults.GetOrAdd(sessionId, _ => new SessionVault());
         lock (v)
         {
             var key = $"{kind}:{value}";
-            if (v.ValueToToken.TryGetValue(key, out var existing)) return existing;
+            if (v.ValueToToken.TryGetValue(key, out var existing)) return Task.FromResult(existing);
             var n = v.Counters[kind] = v.Counters.GetValueOrDefault(kind) + 1;
             var token = $"[{kind}_{n}]";
             v.ValueToToken[key] = token;
             v.TokenToValue[token] = value;
-            return token;
+            return Task.FromResult(token);
         }
     }
 
-    public string Detokenize(string sessionId, string text)
+    public Task<string> DetokenizeAsync(string sessionId, string text, CancellationToken ct = default)
     {
-        if (!_vaults.TryGetValue(sessionId, out var v)) return text;
-        lock (v) return Token().Replace(text, m => v.TokenToValue.GetValueOrDefault(m.Value, m.Value));
+        ct.ThrowIfCancellationRequested();
+        if (!_vaults.TryGetValue(sessionId, out var v)) return Task.FromResult(text);
+        lock (v) return Task.FromResult(Token().Replace(text, m => v.TokenToValue.GetValueOrDefault(m.Value, m.Value)));
     }
 
-    public int Count(string sessionId) => _vaults.TryGetValue(sessionId, out var v) ? v.TokenToValue.Count : 0;
+    public Task<int> CountAsync(string sessionId, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(_vaults.TryGetValue(sessionId, out var v) ? v.TokenToValue.Count : 0);
+    }
 }

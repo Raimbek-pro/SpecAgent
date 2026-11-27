@@ -186,8 +186,8 @@ public static class AuditCliRunner
         }
 
         var sessionId = $"s-cli-{Guid.NewGuid():N}"[..16];
-        var masked = masker.Mask(sessionId, parsed);
-        var piiCount = vault.Count(sessionId);
+        var masked = await masker.MaskAsync(sessionId, parsed, ct);
+        var piiCount = await vault.CountAsync(sessionId, ct);
 
         await stdout.WriteLineAsync($"[SpecAgent] Session {sessionId} | Input: {Path.GetFileName(options.InputPath)} ({masked.Sections.Count} sections, {piiCount} PII values masked)");
 
@@ -210,36 +210,8 @@ public static class AuditCliRunner
             return 1;
         }
 
-        string Demask(string s) => masker.Demask(sessionId, s);
-
-        var demaskedDoc = masked with
-        {
-            Title = Demask(masked.Title),
-            Sections = masked.Sections.Select(s => s with
-            {
-                Title = Demask(s.Title),
-                Text = Demask(s.Text),
-            }).ToList(),
-        };
-
-        var rawReport = ready.Get<AuditReport>();
-        var demaskedReport = rawReport with
-        {
-            Findings = rawReport.Findings.Select(f => f with
-            {
-                Quote = Demask(f.Quote),
-                Title = Demask(f.Title),
-                Description = Demask(f.Description),
-                Recommendation = Demask(f.Recommendation),
-                Rationale = Demask(f.Rationale),
-            }).ToList(),
-            Patches = rawReport.Patches.Select(p => p with
-            {
-                Before = Demask(p.Before),
-                After = Demask(p.After),
-                Gherkin = Demask(p.Gherkin),
-            }).ToList(),
-        };
+        var demaskedDoc = await masker.DemaskAsync(sessionId, masked, ct);
+        var demaskedReport = await masker.DemaskAsync(sessionId, ready.Get<AuditReport>(), includeFindings: true, ct);
 
         var modelName = modelRouting?.Value.Default.Model
                         ?? config["ModelRouting:Default:Model"]

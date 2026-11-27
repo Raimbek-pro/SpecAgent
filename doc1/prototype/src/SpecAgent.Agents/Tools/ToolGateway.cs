@@ -26,7 +26,7 @@ public sealed class ToolGateway(IEventStore events, IKnowledgeBase kb)
                 "tz.search" => SearchTz(doc, args["query"]),
                 "tz.list_sections" => ListSections(doc),
                 "tz.check_quote" => CheckQuote(doc, args["sectionId"], args["quote"]),
-                "kb.search" or "rag.search" => SearchKb(args["query"]),
+                "kb.search" or "rag.search" => await SearchKbAsync(args["query"], ct),
                 _ => throw new ToolError($"Unknown tool '{tool}'"),
             };
         }
@@ -203,8 +203,8 @@ public sealed class ToolGateway(IEventStore events, IKnowledgeBase kb)
         return string.Join('\n', hits) is { Length: > 0 } r ? r : "(no matches)";
     }
 
-    private string SearchKb(string query) =>
-        string.Join("\n\n", kb.Search(query).Select(s => $"[{s.Source} › {s.Heading}]\n{s.Text}")) is { Length: > 0 } r
+    private async Task<string> SearchKbAsync(string query, CancellationToken ct) =>
+        string.Join("\n\n", (await kb.SearchAsync(query, ct: ct)).Select(s => $"[{s.Source} › {s.Heading}]\n{s.Text}")) is { Length: > 0 } r
             ? r : "(knowledge base: nothing relevant)";
 
     private static string Trim(string s, int n) => s.Length <= n ? s : s[..n] + "…";

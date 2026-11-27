@@ -6,7 +6,7 @@ public sealed record KbSnippet(string Source, string Heading, string Text, doubl
 
 public interface IKnowledgeBase
 {
-    IReadOnlyList<KbSnippet> Search(string query, int top = 6);
+    Task<IReadOnlyList<KbSnippet>> SearchAsync(string query, int top = 6, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -45,6 +45,12 @@ public sealed partial class MarkdownKnowledgeBase : IKnowledgeBase
     }
 
     public int ChunkCount => _chunks.Count;
+
+    public Task<IReadOnlyList<KbSnippet>> SearchAsync(string query, int top = 6, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(Search(query, top));
+    }
 
     public IReadOnlyList<KbSnippet> Search(string query, int top = 6)
     {

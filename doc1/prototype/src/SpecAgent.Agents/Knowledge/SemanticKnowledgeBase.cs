@@ -25,9 +25,9 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
 
     public string DirectoryPath => _directory;
 
-    public async Task ReloadAsync()
+    public async Task ReloadAsync(CancellationToken ct = default)
     {
-        await _initLock.WaitAsync();
+        await _initLock.WaitAsync(ct);
         try
         {
             _initialized = false;
@@ -38,7 +38,7 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
         {
             _initLock.Release();
         }
-        await EnsureInitializedAsync();
+        await EnsureInitializedAsync(ct);
     }
 
     private readonly List<VectorChunk> _chunks = [];
@@ -67,14 +67,11 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
         }
     }
 
-    public IReadOnlyList<KbSnippet> Search(string query, int top = 6) =>
-        SearchAsync(query, top).GetAwaiter().GetResult();
-
-    private async Task<IReadOnlyList<KbSnippet>> SearchAsync(string query, int top)
+    public async Task<IReadOnlyList<KbSnippet>> SearchAsync(string query, int top = 6, CancellationToken ct = default)
     {
-        await EnsureInitializedAsync();
+        await EnsureInitializedAsync(ct);
 
-        var qVec = await _embeddings.EmbedAsync(query);
+        var qVec = await _embeddings.EmbedAsync(query, ct);
         if (qVec is null)
             return _keywordFallback.Search(query, top);
 
@@ -82,7 +79,7 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
         {
             try
             {
-                var hits = await _qdrant.QueryAsync(CollectionName, qVec, limit: (ulong)top);
+                var hits = await _qdrant.QueryAsync(CollectionName, qVec, limit: (ulong)top, cancellationToken: ct);
                 if (hits.Count > 0)
                 {
                     return hits.Select(h => new KbSnippet(
@@ -92,7 +89,7 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
                         Math.Round(h.Score, 3))).ToList();
                 }
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!ct.IsCancellationRequested)
             {
                 _logger.LogDebug("Qdrant search failed, falling back to local vector store: {Message}", ex.Message);
             }
@@ -110,10 +107,10 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
         return scored.Count > 0 ? scored : _keywordFallback.Search(query, top);
     }
 
-    private async Task EnsureInitializedAsync()
+    private async Task EnsureInitializedAsync(CancellationToken ct)
     {
         if (_initialized) return;
-        await _initLock.WaitAsync();
+        await _initLock.WaitAsync(ct);
         try
         {
             if (_initialized) return;
@@ -124,6 +121,7 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
             {
                 foreach (var file in Directory.EnumerateFiles(_directory, "*.md", SearchOption.AllDirectories))
                 {
+                    ct.ThrowIfCancellationRequested();
                     var heading = Path.GetFileNameWithoutExtension(file);
                     var buf = new List<string>();
                     async Task FlushAsync()
@@ -135,7 +133,7 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
                         var hash = Sha256($"{file}:{heading}:{text}");
                         if (!cache.TryGetValue(hash, out var vec))
                         {
-                            vec = await _embeddings.EmbedAsync($"{heading}\n{text}");
+                            vec = await _embeddings.EmbedAsync($"{heading}\n{text}", ct);
                             if (vec is not null)
                             {
                                 cache[hash] = vec;
@@ -159,7 +157,7 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
             }
 
             if (dirty) SaveCache(cache);
-            await TrySyncQdrantAsync();
+            await TrySyncQdrantAsync(ct);
             _initialized = true;
         }
         finally
@@ -168,7 +166,7 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
         }
     }
 
-    private async Task TrySyncQdrantAsync()
+    private async Task TrySyncQdrantAsync(CancellationToken ct)
     {
         if (_qdrant is null) return;
         var vectorized = _chunks.Where(c => c.Vector is not null).ToList();
@@ -177,9 +175,9 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
         try
         {
             var dim = (ulong)vectorized[0].Vector!.Length;
-            var exists = await _qdrant.CollectionExistsAsync(CollectionName);
+            var exists = await _qdrant.CollectionExistsAsync(CollectionName, ct);
             if (!exists)
-                await _qdrant.CreateCollectionAsync(CollectionName, new VectorParams { Size = dim, Distance = Distance.Cosine });
+                await _qdrant.CreateCollectionAsync(CollectionName, new VectorParams { Size = dim, Distance = Distance.Cosine }, cancellationToken: ct);
 
             var points = vectorized.Select((c, i) => new PointStruct
             {
@@ -193,11 +191,11 @@ public sealed class SemanticKnowledgeBase : IKnowledgeBase
                 }
             }).ToList();
 
-            await _qdrant.UpsertAsync(CollectionName, points);
+            await _qdrant.UpsertAsync(CollectionName, points, cancellationToken: ct);
             _qdrantReady = true;
             _logger.LogInformation("Synced {Count} knowledge chunks to Qdrant collection '{Collection}'", points.Count, CollectionName);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!ct.IsCancellationRequested)
         {
             _logger.LogDebug("Qdrant unavailable ({Message}); using local cached vector search", ex.Message);
         }

@@ -33,7 +33,7 @@ public class OrchestratorTests
     {
         using var f = File.OpenRead(ParserTests.DemoSpecPath);
         var doc = new TextDocumentParser().Parse(f, "p2p-transfer-bad.md");
-        var masked = new PiiMasker(new InMemoryPiiVault()).Mask("s-test", doc);
+        var masked = await new PiiMasker(new InMemoryPiiVault()).MaskAsync("s-test", doc);
         await _events.AppendAsync("s-test", EventTypes.TzIngested, "ingestion", "test", new IngestedPayload(masked, 0));
         return "s-test";
     }

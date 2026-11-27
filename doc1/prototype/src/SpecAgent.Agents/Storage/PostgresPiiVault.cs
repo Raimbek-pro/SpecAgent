@@ -88,23 +88,23 @@ public sealed partial class PostgresPiiVault : IPiiVault
         await tx.CommitAsync(ct);
     }
 
-    public string Tokenize(string sessionId, string kind, string value)
+    public async Task<string> TokenizeAsync(string sessionId, string kind, string value, CancellationToken ct = default)
     {
         var hmac = ComputeHmac(sessionId, kind, value);
         var now = DateTimeOffset.UtcNow;
         var expiresAt = now.Add(_ttl);
 
-        using var conn = _db.OpenConnection();
-        using var tx = conn.BeginTransaction();
+        await using var conn = await _db.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
 
-        using (var lockCmd = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtext(@lockKey))", conn, tx))
+        await using (var lockCmd = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtext(@lockKey))", conn, tx))
         {
             lockCmd.Parameters.AddWithValue("lockKey", $"pii:{sessionId}");
-            lockCmd.ExecuteNonQuery();
+            await lockCmd.ExecuteNonQueryAsync(ct);
         }
 
         // 1. Check if this exact value was already tokenized for this session & kind.
-        using (var findCmd = new NpgsqlCommand("""
+        await using (var findCmd = new NpgsqlCommand("""
             SELECT token FROM pii_vault_entries
             WHERE session_id = @s AND kind = @k AND value_hmac = @h AND expires_at > @now
             LIMIT 1
@@ -114,27 +114,27 @@ public sealed partial class PostgresPiiVault : IPiiVault
             findCmd.Parameters.AddWithValue("k", kind);
             findCmd.Parameters.AddWithValue("h", hmac);
             findCmd.Parameters.AddWithValue("now", now);
-            if (findCmd.ExecuteScalar() is string existing)
+            if (await findCmd.ExecuteScalarAsync(ct) is string existing)
             {
-                tx.Commit();
+                await tx.CommitAsync(ct);
                 return existing;
             }
         }
 
         // 2. Allocate next monotonic token number for (session_id, kind).
         long count;
-        using (var countCmd = new NpgsqlCommand(
+        await using (var countCmd = new NpgsqlCommand(
             "SELECT COUNT(*) FROM pii_vault_entries WHERE session_id = @s AND kind = @k", conn, tx))
         {
             countCmd.Parameters.AddWithValue("s", sessionId);
             countCmd.Parameters.AddWithValue("k", kind);
-            count = (long)countCmd.ExecuteScalar()!;
+            count = (long)(await countCmd.ExecuteScalarAsync(ct))!;
         }
 
         var token = $"[{kind}_{count + 1}]";
         var (nonce, ciphertext, tag) = Encrypt(sessionId, token, value);
 
-        using (var insertCmd = new NpgsqlCommand("""
+        await using (var insertCmd = new NpgsqlCommand("""
             INSERT INTO pii_vault_entries (session_id, token, kind, value_hmac, nonce, ciphertext, tag, expires_at, created_at)
             VALUES (@s, @tok, @k, @h, @nonce, @ct, @tag, @exp, @now)
             """, conn, tx))
@@ -148,14 +148,14 @@ public sealed partial class PostgresPiiVault : IPiiVault
             insertCmd.Parameters.AddWithValue("tag", tag);
             insertCmd.Parameters.AddWithValue("exp", expiresAt);
             insertCmd.Parameters.AddWithValue("now", now);
-            insertCmd.ExecuteNonQuery();
+            await insertCmd.ExecuteNonQueryAsync(ct);
         }
 
-        tx.Commit();
+        await tx.CommitAsync(ct);
         return token;
     }
 
-    public string Detokenize(string sessionId, string text)
+    public async Task<string> DetokenizeAsync(string sessionId, string text, CancellationToken ct = default)
     {
         if (string.IsNullOrEmpty(text)) return text;
         var matches = TokenRegex().Matches(text);
@@ -164,8 +164,8 @@ public sealed partial class PostgresPiiVault : IPiiVault
         var neededTokens = matches.Select(m => m.Value).Distinct(StringComparer.Ordinal).ToArray();
         var map = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        using var conn = _db.OpenConnection();
-        using var cmd = new NpgsqlCommand("""
+        await using var conn = await _db.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand("""
             SELECT token, nonce, ciphertext, tag
             FROM pii_vault_entries
             WHERE session_id = @s AND token = ANY(@tokens) AND expires_at > @now
@@ -174,8 +174,8 @@ public sealed partial class PostgresPiiVault : IPiiVault
         cmd.Parameters.AddWithValue("tokens", neededTokens);
         cmd.Parameters.AddWithValue("now", DateTimeOffset.UtcNow);
 
-        using var reader = cmd.ExecuteReader();
-        while (reader.Read())
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
         {
             var token = reader.GetString(0);
             var nonce = (byte[])reader[1];
@@ -188,14 +188,14 @@ public sealed partial class PostgresPiiVault : IPiiVault
         return TokenRegex().Replace(text, m => map.GetValueOrDefault(m.Value, m.Value));
     }
 
-    public int Count(string sessionId)
+    public async Task<int> CountAsync(string sessionId, CancellationToken ct = default)
     {
-        using var conn = _db.OpenConnection();
-        using var cmd = new NpgsqlCommand(
+        await using var conn = await _db.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand(
             "SELECT COUNT(*) FROM pii_vault_entries WHERE session_id = @s AND expires_at > @now", conn);
         cmd.Parameters.AddWithValue("s", sessionId);
         cmd.Parameters.AddWithValue("now", DateTimeOffset.UtcNow);
-        return Convert.ToInt32((long)cmd.ExecuteScalar()!);
+        return Convert.ToInt32((long)(await cmd.ExecuteScalarAsync(ct))!);
     }
 
     public async Task<int> PurgeExpiredAsync(CancellationToken ct = default)

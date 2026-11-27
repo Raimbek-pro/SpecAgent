@@ -213,10 +213,11 @@ api.MapPost("/", async (IFormFile file, SecurityOptions secOpts, DocumentParserR
     if (ext is ".pdf" or ".docx" or ".md" or ".txt")
         await File.WriteAllBytesAsync(Path.Combine(uploadsDir, $"{sessionId}{ext}"), bytes, ct);
 
-    var masked = masker.Mask(sessionId, parsed);
+    var masked = await masker.MaskAsync(sessionId, parsed, ct);
+    var piiCount = await vault.CountAsync(sessionId, ct);
     await events.AppendAsync(sessionId, EventTypes.TzIngested, "ingestion",
-        $"{masked.Sections.Count} sections, {vault.Count(sessionId)} PII values masked",
-        new IngestedPayload(masked, vault.Count(sessionId)), ct);
+        $"{masked.Sections.Count} sections, {piiCount} PII values masked",
+        new IngestedPayload(masked, piiCount), ct);
     await queue.EnqueueAsync(sessionId);
     return Results.Accepted($"/api/audits/{sessionId}", new { sessionId });
 }).DisableAntiforgery().RequireRateLimiting(RateLimitPolicies.AuditUpload);
@@ -253,10 +254,7 @@ api.MapGet("/{id}/document", async (string id, IEventStore events, PiiMasker mas
 {
     var state = AuditState.From(await events.ReadAsync(id, ct: ct));
     if (state.Document is not { } doc) return Results.NotFound();
-    return Results.Ok(doc with
-    {
-        Sections = doc.Sections.Select(s => s with { Title = masker.Demask(id, s.Title), Text = masker.Demask(id, s.Text) }).ToList(),
-    });
+    return Results.Ok(await masker.DemaskAsync(id, doc, ct));
 });
 
 // 4. Final report — the Demasker is the only place real PII leaves the system.
@@ -272,20 +270,8 @@ api.MapGet("/{id}", async (string id, IEventStore events, PiiMasker masker, Canc
         return Results.Ok(new { status, events = log.Count });
     }
 
-    var report = ready.Get<AuditReport>();
-    string D(string s) => masker.Demask(id, s);
-    return Results.Ok(new
-    {
-        status = "done",
-        report = report with
-        {
-            Findings = report.Findings.Select(f => f with
-            {
-                Quote = D(f.Quote), Title = D(f.Title), Description = D(f.Description), Recommendation = D(f.Recommendation),
-            }).ToList(),
-            Patches = report.Patches.Select(p => p with { Before = D(p.Before), After = D(p.After), Gherkin = D(p.Gherkin) }).ToList(),
-        },
-    });
+    var report = await masker.DemaskAsync(id, ready.Get<AuditReport>(), includeFindings: true, ct);
+    return Results.Ok(new { status = "done", report });
 });
 
 // 5. Raw findings + agent trail behind one final finding ("Agent Logs / Debate" tab).
@@ -294,8 +280,16 @@ api.MapGet("/{id}/findings/{findingId}/trace", async (string id, string findingI
     var state = AuditState.From(await events.ReadAsync(id, ct: ct));
     var finding = state.Judged?.Findings.FirstOrDefault(f => f.Id == findingId);
     if (finding is null) return Results.NotFound();
-    var raw = state.CriticFindings.Values.SelectMany(f => f).Where(f => finding.MergedFrom.Contains(f.Id))
-        .Select(f => f with { Quote = masker.Demask(id, f.Quote), Description = masker.Demask(id, f.Description) });
+    var matchedRaw = state.CriticFindings.Values.SelectMany(f => f).Where(f => finding.MergedFrom.Contains(f.Id)).ToList();
+    var raw = new List<RawFinding>(matchedRaw.Count);
+    foreach (var f in matchedRaw)
+    {
+        raw.Add(f with
+        {
+            Quote = await masker.DemaskAsync(id, f.Quote, ct),
+            Description = await masker.DemaskAsync(id, f.Description, ct),
+        });
+    }
     return Results.Ok(new { finding.Id, finding.Rationale, finding.Agents, raw });
 });
 
@@ -305,8 +299,9 @@ api.MapPost("/{id}/ask", async (string id, AskRequest req, AuditOrchestrator orc
     try
     {
         var agent = req.Agent.TrimStart('@');
-        var answer = await orchestrator.AskAsync(id, agent, req.SectionId, masker.Mask(id, req.Question), ct);
-        var demasked = masker.Demask(id, answer.Answer);
+        var maskedQuestion = await masker.MaskAsync(id, req.Question, ct);
+        var answer = await orchestrator.AskAsync(id, agent, req.SectionId, maskedQuestion, ct);
+        var demasked = await masker.DemaskAsync(id, answer.Answer, ct);
         return Results.Ok(new
         {
             agent = agent.ToLowerInvariant(),
@@ -326,18 +321,24 @@ api.MapGet("/{id}/chat", async (string id, IEventStore events, PiiMasker masker,
     var log = await events.ReadAsync(id, ct: ct);
     if (log.Count == 0) return Results.NotFound();
     var state = AuditState.From(log);
-    var chats = state.ChatsBySection.ToDictionary(
-        kv => kv.Key,
-        kv => kv.Value.Select(m => new
+    var chats = new Dictionary<string, List<object>>(StringComparer.OrdinalIgnoreCase);
+    foreach (var kv in state.ChatsBySection)
+    {
+        var list = new List<object>(kv.Value.Count);
+        foreach (var m in kv.Value)
         {
-            seq = m.Seq,
-            at = m.At,
-            role = m.Role,
-            agent = m.Agent,
-            sectionId = m.SectionId,
-            text = masker.Demask(id, m.Text),
-        }).ToList(),
-        StringComparer.OrdinalIgnoreCase);
+            list.Add(new
+            {
+                seq = m.Seq,
+                at = m.At,
+                role = m.Role,
+                agent = m.Agent,
+                sectionId = m.SectionId,
+                text = await masker.DemaskAsync(id, m.Text, ct),
+            });
+        }
+        chats[kv.Key] = list;
+    }
     return Results.Ok(chats);
 }).WithSummary("Get persistent per-section @agent chat history");
 
@@ -386,17 +387,8 @@ api.MapGet("/{id}/export/report.md", async (string id, IEventStore events, PiiMa
     var ready = log.LastOrDefault(e => e.Type == EventTypes.ReportReady);
     if (state.Document is not { } doc || ready is null) return Results.NotFound();
 
-    string D(string s) => masker.Demask(id, s);
-    var demaskedDoc = doc with { Sections = doc.Sections.Select(s => s with { Title = D(s.Title), Text = D(s.Text) }).ToList() };
-    var rawReport = ready.Get<AuditReport>();
-    var demaskedReport = rawReport with
-    {
-        Findings = rawReport.Findings.Select(f => f with
-        {
-            Quote = D(f.Quote), Title = D(f.Title), Description = D(f.Description), Recommendation = D(f.Recommendation), Rationale = D(f.Rationale),
-        }).ToList(),
-        Patches = rawReport.Patches.Select(p => p with { Before = D(p.Before), After = D(p.After), Gherkin = D(p.Gherkin) }).ToList(),
-    };
+    var demaskedDoc = await masker.DemaskAsync(id, doc, ct);
+    var demaskedReport = await masker.DemaskAsync(id, ready.Get<AuditReport>(), includeFindings: true, ct);
 
     var model = config["ModelRouting:Default:Model"] ?? "gemini-flash-lite-latest";
     var md = ToolGateway.RenderReportMarkdown(demaskedDoc, demaskedReport, model);
@@ -412,13 +404,8 @@ api.MapGet("/{id}/export/fixed.md", async (string id, IEventStore events, PiiMas
     var ready = log.LastOrDefault(e => e.Type == EventTypes.ReportReady);
     if (state.Document is not { } doc || ready is null) return Results.NotFound();
 
-    string D(string s) => masker.Demask(id, s);
-    var demaskedDoc = doc with { Sections = doc.Sections.Select(s => s with { Title = D(s.Title), Text = D(s.Text) }).ToList() };
-    var rawReport = ready.Get<AuditReport>();
-    var demaskedReport = rawReport with
-    {
-        Patches = rawReport.Patches.Select(p => p with { Before = D(p.Before), After = D(p.After), Gherkin = D(p.Gherkin) }).ToList(),
-    };
+    var demaskedDoc = await masker.DemaskAsync(id, doc, ct);
+    var demaskedReport = await masker.DemaskAsync(id, ready.Get<AuditReport>(), includeFindings: false, ct);
 
     var md = ToolGateway.RenderPatchedDocumentMarkdown(demaskedDoc, demaskedReport, patchOpts.Value.IncludeGherkinInFixed);
     var baseName = Path.GetFileNameWithoutExtension(doc.SourceFileName);
@@ -433,13 +420,8 @@ api.MapGet("/{id}/export/fixed.pdf", async (string id, string? download, IEventS
     var ready = log.LastOrDefault(e => e.Type == EventTypes.ReportReady);
     if (state.Document is not { } doc || ready is null) return Results.NotFound();
 
-    string D(string s) => masker.Demask(id, s);
-    var demaskedDoc = doc with { Sections = doc.Sections.Select(s => s with { Title = D(s.Title), Text = D(s.Text) }).ToList() };
-    var rawReport = ready.Get<AuditReport>();
-    var demaskedReport = rawReport with
-    {
-        Patches = rawReport.Patches.Select(p => p with { Before = D(p.Before), After = D(p.After), Gherkin = D(p.Gherkin) }).ToList(),
-    };
+    var demaskedDoc = await masker.DemaskAsync(id, doc, ct);
+    var demaskedReport = await masker.DemaskAsync(id, ready.Get<AuditReport>(), includeFindings: false, ct);
 
     var pdfBytes = DocumentExporter.RenderPdf(demaskedDoc, demaskedReport, patchOpts.Value.IncludeGherkinInFixed);
     var baseName = Path.GetFileNameWithoutExtension(doc.SourceFileName);
@@ -459,13 +441,8 @@ api.MapGet("/{id}/export/fixed.docx", async (string id, IEventStore events, PiiM
     var ready = log.LastOrDefault(e => e.Type == EventTypes.ReportReady);
     if (state.Document is not { } doc || ready is null) return Results.NotFound();
 
-    string D(string s) => masker.Demask(id, s);
-    var demaskedDoc = doc with { Sections = doc.Sections.Select(s => s with { Title = D(s.Title), Text = D(s.Text) }).ToList() };
-    var rawReport = ready.Get<AuditReport>();
-    var demaskedReport = rawReport with
-    {
-        Patches = rawReport.Patches.Select(p => p with { Before = D(p.Before), After = D(p.After), Gherkin = D(p.Gherkin) }).ToList(),
-    };
+    var demaskedDoc = await masker.DemaskAsync(id, doc, ct);
+    var demaskedReport = await masker.DemaskAsync(id, ready.Get<AuditReport>(), includeFindings: false, ct);
 
     var docxBytes = DocumentExporter.RenderDocx(demaskedDoc, demaskedReport, patchOpts.Value.IncludeGherkinInFixed);
     var baseName = Path.GetFileNameWithoutExtension(doc.SourceFileName);
@@ -483,8 +460,7 @@ api.MapGet("/{id}/original.pdf", async (string id, IEventStore events, PiiMasker
     }
     var state = AuditState.From(await events.ReadAsync(id, ct: ct));
     if (state.Document is not { } doc) return Results.NotFound();
-    string D(string s) => masker.Demask(id, s);
-    var demaskedDoc = doc with { Sections = doc.Sections.Select(s => s with { Title = D(s.Title), Text = D(s.Text) }).ToList() };
+    var demaskedDoc = await masker.DemaskAsync(id, doc, ct);
     var pdfBytes = DocumentExporter.RenderPdf(demaskedDoc, null);
     var baseName = Path.GetFileNameWithoutExtension(doc.SourceFileName);
     resp.Headers.ContentDisposition = $"inline; filename=\"{baseName}.pdf\"";

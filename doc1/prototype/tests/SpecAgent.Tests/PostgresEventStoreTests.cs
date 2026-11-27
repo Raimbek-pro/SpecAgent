@@ -45,7 +45,7 @@ public class PostgresEventStoreTests
 
         using var f = File.OpenRead(ParserTests.DemoSpecPath);
         var doc = new TextDocumentParser().Parse(f, "p2p-transfer-bad.md");
-        var masked = new PiiMasker(new InMemoryPiiVault()).Mask(sessionId, doc);
+        var masked = await new PiiMasker(new InMemoryPiiVault()).MaskAsync(sessionId, doc);
         await store.AppendAsync(sessionId, EventTypes.TzIngested, "ingestion", "pg test", new IngestedPayload(masked, 0));
 
         AuditOrchestrator NewWorker()
