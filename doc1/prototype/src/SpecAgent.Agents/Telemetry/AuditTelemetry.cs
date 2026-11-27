@@ -44,8 +44,6 @@ public static class ModelPricing
     private static (decimal Input, decimal Output) RatesPerMillion(string model)
     {
         var m = (model ?? "").ToLowerInvariant();
-        if (m.Contains("kimi-k3.1-pro")) return (1.20m, 4.00m);
-        if (m.Contains("kimi")) return (0.60m, 2.50m);
         if (m.Contains("qwen4-max")) return (1.50m, 4.50m);
         if (m.Contains("qwen3.7-plus")) return (0.40m, 1.60m);
         if (m.Contains("qwen3.7-flash")) return (0.03m, 0.13m);

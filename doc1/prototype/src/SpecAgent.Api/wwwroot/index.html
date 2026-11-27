@@ -96,6 +96,7 @@ html[data-theme="dark"] .clean-expand > summary { color: var(--ok); }
 html[data-theme="dark"] .new-tab-drop { border-color: #3d4452; background: var(--panel); }
 html[data-theme="dark"] .brand-logo,
 html[data-theme="dark"] .sidebar-logo { filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.38)); }
+html[data-theme="dark"] mark.on { background: rgba(248, 81, 73, 0.26); color: #ffffff; }
 html[data-theme="dark"] .view-switch button.active { background: var(--accent); color: #0d1117; }
 
 * { box-sizing: border-box; }
@@ -772,7 +773,7 @@ mark.on { background: #fff0f0; border-radius: 3px; }
   <div class="sb-group">
     <span id="sb-mode">0 токенов · PostgreSQL Cache</span>
     <span>ISO/IEC/IEEE 29148</span>
-    <span id="sb-model">Kimi K3 · Qdrant · Postgres</span>
+    <span id="sb-model">Gemini 3.5 Flash Lite · Qdrant · Postgres</span>
   </div>
 </footer>
 
@@ -821,7 +822,7 @@ mark.on { background: #fff0f0; border-radius: 3px; }
           <div class="set-field">
             <label for="set-parallel">Параллельность (Parallelism) <button type="button" class="info-ico" data-hint="h-parallel" title="Показать пояснение">i</button></label>
             <input type="number" id="set-parallel" min="1" max="10" value="6" class="admin-ctrl">
-            <span class="set-hint" id="h-parallel">Сколько разделов исправляется одновременно в параллельных потоках. Выше — быстрее аудит, но зависит от лимитов API (для Kimi Tier 1 оптимально 6).</span>
+            <span class="set-hint" id="h-parallel">Сколько разделов исправляется одновременно в параллельных потоках. Выше — быстрее аудит, но зависит от лимитов API (оптимально 6).</span>
           </div>
           <div class="set-field">
             <label class="pii-master" style="margin-bottom:0;cursor:pointer">
@@ -873,10 +874,10 @@ mark.on { background: #fff0f0; border-radius: 3px; }
           <div class="set-field">
             <label for="set-model">Модель по умолчанию <button type="button" class="info-ico" data-hint="h-model" title="Показать пояснение">i</button></label>
             <select id="set-model" class="admin-ctrl">
-              <option value="kimi-k3">kimi-k3 (быстрая, по умолчанию)</option>
-              <option value="kimi-k3.1-pro">kimi-k3.1-pro (максимальное качество)</option>
+              <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (быстрая и дешёвая, по умолчанию)</option>
+              <option value="gemini-3.8-flash">gemini-3.8-flash (максимальное качество)</option>
             </select>
-            <span class="set-hint" id="h-model">Базовая LLM для агентов-критиков, арбитра и автоисправления. <code>kimi-k3</code> быстрее и дешевле, <code>kimi-k3.1-pro</code> — глубже для сложных архитектурных ТЗ.</span>
+            <span class="set-hint" id="h-model">Базовая LLM для агентов-критиков, арбитра и автоисправления. <code>gemini-3.5-flash-lite</code> быстрее и дешевле, <code>gemini-3.8-flash</code> — глубже для сложных архитектурных ТЗ.</span>
           </div>
           <div class="set-field">
             <label for="set-effort">Reasoning Effort <button type="button" class="info-ico" data-hint="h-effort" title="Показать пояснение">i</button></label>
@@ -1662,7 +1663,7 @@ async function startAuditOnTab(t) {
   if (!t.file || t.running) return;
   t.running = true; t.trace = []; t.report = null; t.reportMd = ''; t.rightFile = 'fixed';
   const started = Date.now();
-  $('#sb-mode').textContent = 'Live LLM (Kimi K3)';
+  $('#sb-mode').textContent = 'Live LLM (Gemini)';
   renderActiveTab();
 
   const body = new FormData(); body.append('file', t.file);
@@ -1805,7 +1806,7 @@ function renderMarkdown(rawText, sectionFindings) {
   let text = rawText ?? '';
   const marks = [];
   for (const f of sectionFindings) {
-    if (!f.quote) continue;
+    if (!f.quote || f.quote.includes('|')) continue;
     const idx = text.indexOf(f.quote);
     if (idx !== -1) {
       const token = `@@MARK_${marks.length}@@`;

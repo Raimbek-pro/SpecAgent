@@ -38,7 +38,7 @@ Unlike single-prompt LLM wrappers, SpecAgent runs a **4-level deterministic + mu
 
 ## What Was Built (AI Engineer Summary)
 
-- **LLM Gateway (`OpenAiCompatibleLlmClient`):** Universal OpenAI-compatible client (Kimi K3 / Moonshot AI, Gemini, Qwen/vLLM) with native Strict JSON Schema validation (`StrictJsonSchema.cs`), configurable concurrency, pacing, retries, and fallback routing.
+- **LLM Gateway (`OpenAiCompatibleLlmClient`):** Universal OpenAI-compatible client (Google Gemini `gemini-3.5-flash-lite` / `gemini-3.8-flash`, Qwen/vLLM) with native Strict JSON Schema validation (`StrictJsonSchema.cs`), configurable concurrency, pacing, retries, and fallback routing.
 - **Knowledge Base & Semantic RAG (`SemanticKnowledgeBase` + `FreeEmbeddingClient`):** Qdrant vector search + local embedding cache + live bank reference document upload/deletion (`POST/DELETE /api/knowledge` supporting `.md`, `.txt`, `.pdf`, `.docx`).
 - **ISO 29148 & FinTech Standards:** Added `iso-29148-requirements-standard.md`, `mandatory-checklist.md`, `ChecklistAgent`, and expanded `RuleBasedCritic`.
 - **Token & Latency Optimization:** Smart Verifier fast-path (verifies `Blocker`/`Critical`, direct accept for `Major`/`Minor`), grouped per-section patching, compact `PatchWriter` prompts (`~2.5x–3x` faster and cheaper).
@@ -79,9 +79,8 @@ Every finding card in the right-hand audit pane includes an inline **Ask a Speci
 
 - **Docker** (Docker Desktop or OrbStack on macOS) — recommended for full stack (`PostgreSQL` + `Qdrant` + `API`)
 - Or **.NET 10 SDK** for local development & unit tests
-- API keys:
-  - `MOONSHOT_API_KEY` (Kimi K3 / Moonshot AI — primary LLM)
-  - `GEMINI_API_KEY` (optional, free `gemini-embedding-001` for Qdrant semantic embeddings; falls back to keyword search if omitted)
+- API key:
+  - `GEMINI_API_KEY` (Google AI Studio — powers both fast `gemini-3.5-flash-lite` / `gemini-3.8-flash` LLM and `gemini-embedding-001` Qdrant semantic embeddings)
 
 ### 1. Configure Environment Variables
 
@@ -94,7 +93,6 @@ cp .env.example .env
 Edit `.env`:
 
 ```env
-MOONSHOT_API_KEY=your_moonshot_api_key_here
 GEMINI_API_KEY=your_gemini_api_key_here
 ```
 

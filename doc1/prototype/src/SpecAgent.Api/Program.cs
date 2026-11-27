@@ -533,9 +533,9 @@ app.MapGet("/api/settings", (IOptions<PatchOptions> patchOpts, IOptions<ModelRou
             defaultModel = m.Default.Model,
             defaultEffort = m.Default.Effort,
             provider = config["Llm:Provider"] ?? "OpenAiCompatible",
-            endpoint = config["Llm:Endpoint"] ?? "https://api.moonshot.ai/v1",
-            availableModels = new[] { "kimi-k3", "kimi-k3.1-pro" },
-            availableEfforts = new[] { "low", "high", "max" },
+            endpoint = config["Llm:Endpoint"] ?? "https://generativelanguage.googleapis.com/v1beta/openai/",
+            availableModels = new[] { "gemini-3.5-flash-lite", "gemini-3.8-flash" },
+            availableEfforts = new[] { "minimal", "low", "medium", "high" },
         },
         pii = new
         {

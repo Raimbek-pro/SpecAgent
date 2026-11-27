@@ -199,7 +199,7 @@ public class SecurityAndPersistenceTests
         {
             var saved = new PersistedSystemSettings(
                 new PersistedPatchSettings("Critical", 7, 2, 4, true),
-                new PersistedModelSettings("kimi-k3.1-pro", "high"),
+                new PersistedModelSettings("gemini-3.8-flash", "high"),
                 new PersistedPiiSettings(true, new Dictionary<string, bool> { ["IIN"] = true, ["PAN"] = true }));
 
             await store1.SaveAsync(saved, "test-admin");
@@ -211,7 +211,7 @@ public class SecurityAndPersistenceTests
             Assert.Equal("Critical", loaded.Patches!.MinSeverity);
             Assert.Equal(7, loaded.Patches.MaxPatches);
             Assert.True(loaded.Patches.IncludeGherkinInFixed);
-            Assert.Equal("kimi-k3.1-pro", loaded.Model!.DefaultModel);
+            Assert.Equal("gemini-3.8-flash", loaded.Model!.DefaultModel);
             Assert.True(loaded.Pii!.Enabled);
         }
         finally

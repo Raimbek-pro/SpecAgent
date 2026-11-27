@@ -10,7 +10,7 @@ using SpecAgent.Agents.Telemetry;
 namespace SpecAgent.Agents.Llm;
 
 /// <summary>
-/// Universal OpenAI-compatible LLM client for Kimi (Moonshot AI), Google Gemini, and Qwen (Model Studio / vLLM).
+/// Universal OpenAI-compatible LLM client for Google Gemini, Qwen (Model Studio / vLLM), and OpenAI-compatible endpoints.
 /// Uses StrictJsonSchema for guaranteed structured outputs, configurable parallel concurrency, and retry/fallback.
 /// </summary>
 public sealed class OpenAiCompatibleLlmClient : ILlmClient
@@ -43,18 +43,17 @@ public sealed class OpenAiCompatibleLlmClient : ILlmClient
     public async Task<T> CompleteJsonAsync<T>(AgentCall call, CancellationToken ct = default) where T : class
     {
         var route = _routing.Value.For(call.Agent);
-        var endpoint = _config["Llm:Endpoint"] ?? "https://api.moonshot.ai/v1";
-        var apiKeyEnv = _config["Llm:ApiKeyEnv"] ?? "MOONSHOT_API_KEY";
+        var endpoint = _config["Llm:Endpoint"] ?? "https://generativelanguage.googleapis.com/v1beta/openai/";
+        var apiKeyEnv = _config["Llm:ApiKeyEnv"] ?? "GEMINI_API_KEY";
         var apiKey = Environment.GetEnvironmentVariable(apiKeyEnv)
-                     ?? Environment.GetEnvironmentVariable("MOONSHOT_API_KEY")
                      ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY")
                      ?? Environment.GetEnvironmentVariable("DASHSCOPE_API_KEY")
+                     ?? Environment.GetEnvironmentVariable("QWEN_API_KEY")
                      ?? Environment.GetEnvironmentVariable("OPENAI_API_KEY")
                      ?? throw new LlmException($"API key not found. Set {apiKeyEnv} in .env or environment.");
 
         var minDelayMs = int.TryParse(_config["Llm:MinDelayMs"], out var d) ? d : 200;
         var fallbackModel = _config["Llm:FallbackModel"];
-        var isMoonshot = endpoint.Contains("moonshot", StringComparison.OrdinalIgnoreCase);
 
         var modelsToTry = string.IsNullOrWhiteSpace(fallbackModel) || fallbackModel == route.Model
             ? new[] { route.Model }
@@ -85,7 +84,7 @@ public sealed class OpenAiCompatibleLlmClient : ILlmClient
                     var options = new ChatCompletionOptions
                     {
                         MaxOutputTokenCount = call.MaxTokens,
-                        ReasoningEffortLevel = ParseReasoningEffort(route.Effort, isMoonshot),
+                        ReasoningEffortLevel = ParseReasoningEffort(route.Effort),
                         ResponseFormat = ChatResponseFormat.CreateJsonSchemaFormat(
                             jsonSchemaFormatName: typeof(T).Name,
                             jsonSchema: BinaryData.FromObjectAsJson(StrictJsonSchema.For<T>()),
@@ -165,20 +164,9 @@ public sealed class OpenAiCompatibleLlmClient : ILlmClient
         if (waitMs > 0) await Task.Delay(waitMs, ct);
     }
 
-    private static ChatReasoningEffortLevel? ParseReasoningEffort(string effort, bool isMoonshot)
+    private static ChatReasoningEffortLevel? ParseReasoningEffort(string effort)
     {
         var norm = effort.ToLowerInvariant();
-        if (isMoonshot)
-        {
-            // Kimi K3 valid efforts: low | high | max
-            return norm switch
-            {
-                "high" => ChatReasoningEffortLevel.High,
-                "max" => new ChatReasoningEffortLevel("max"),
-                _ => ChatReasoningEffortLevel.Low,
-            };
-        }
-
         return norm switch
         {
             "minimal" => new ChatReasoningEffortLevel("minimal"),

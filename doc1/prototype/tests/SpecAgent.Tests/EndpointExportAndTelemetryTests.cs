@@ -160,12 +160,12 @@ public class EndpointExportAndTelemetryTests
         var sessionId = $"s-tel-{Guid.NewGuid():N}"[..16];
         await events.AppendAsync(sessionId, EventTypes.RunStarted, "orchestrator", "telemetry test");
 
-        var cost1 = ModelPricing.EstimateCostUsd("kimi-k3", 10_000, 2_000);
-        var cost2 = ModelPricing.EstimateCostUsd("kimi-k3", 5_000, 1_000);
+        var cost1 = ModelPricing.EstimateCostUsd("gemini-3.5-flash-lite", 10_000, 2_000);
+        var cost2 = ModelPricing.EstimateCostUsd("gemini-3.5-flash-lite", 5_000, 1_000);
         Assert.True(cost1 > 0 && cost2 > 0);
 
-        await usage.RecordUsageAsync(sessionId, "logic", "kimi-k3", 10_000, 2_000, cost1, 1200);
-        await usage.RecordUsageAsync(sessionId, "meta-critic", "kimi-k3", 5_000, 1_000, cost2, 800);
+        await usage.RecordUsageAsync(sessionId, "logic", "gemini-3.5-flash-lite", 10_000, 2_000, cost1, 1200);
+        await usage.RecordUsageAsync(sessionId, "meta-critic", "gemini-3.5-flash-lite", 5_000, 1_000, cost2, 800);
 
         var total = await usage.GetUsageAsync(sessionId);
         Assert.Equal(15_000, total.InputTokens);
