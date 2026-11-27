@@ -104,7 +104,7 @@ public sealed partial class SectionBuilder
 
     private void AddRequirementSection(string id, string rest, int level)
     {
-        if (!LooksLikeItem(rest))
+        if (!LooksLikeRequirementBody(rest))
         {
             StartSection(id, rest, level);
         }
@@ -116,7 +116,17 @@ public sealed partial class SectionBuilder
     }
 
     private static bool LooksLikeItem(string rest) =>
-        rest.EndsWith('.') || rest.Contains(';') || rest.Length > 90;
+        rest.EndsWith('.') || rest.EndsWith('?') || rest.Contains(';') || rest.Length > 90;
+
+    // Wrapped PDF requirement lines (e.g. "Ф-4 После подтверждения сервис отправляет запрос GET /api/...")
+    // must stay in section body rather than Title so patches rewrite them cleanly.
+    private static bool LooksLikeRequirementBody(string rest) =>
+        LooksLikeItem(rest) ||
+        rest.Contains(". ") ||
+        rest.Contains(',') ||
+        rest.Contains('/') ||
+        rest.EndsWith('!') ||
+        rest.Length > 55;
 
     private static bool TryMatchNamedHeading(string text, bool isExplicitHeading, out string id, out string title)
     {

@@ -21,8 +21,11 @@ public static partial class RuleBasedCritic
     [GeneratedRegex(@"(?i)вызов|запрос|\bPOST\b|процессинг|шлюз|gateway")] private static partial Regex ExternalCall();
     [GeneratedRegex(@"(?i)тайм-?аут|timeout|время ожидания")] private static partial Regex Timeout();
     [GeneratedRegex(@"(?i)\bCVV2?\b|\bCVC2?\b")] private static partial Regex Cvv();
+    [GeneratedRegex(@"(?i)\b(?:PAN|ИИН|IIN)\b|номер\w*\s+карт")] private static partial Regex SensitivePii();
+    [GeneratedRegex(@"(?i)маскир|mask|запрещ|не\s+логир|не\s+запис|исключ|шифрован")] private static partial Regex PiiProtected();
     [GeneratedRegex(@"(?i)лог|журнал|log|сохран|хран")] private static partial Regex StoreOrLog();
-    [GeneratedRegex(@"(?i)REST type.*\bGET\b|curl\s+-G.*save")] private static partial Regex GetMutation();
+    [GeneratedRegex(@"(?i)(?:REST type.*\bGET\b|curl\s+-G.*(?:save|create|update|delete|execute|transfer|pay)|\bGET\s+/\S*(?:execute|transfer|pay|debit|charge|save|create|update|delete|cancel|withdraw|deposit))")]
+    private static partial Regex GetMutation();
     [GeneratedRegex(@"(?i)""result""\s*:\s*""ERROR""")] private static partial Regex OkWithError();
     [GeneratedRegex(@"(?i)заполня[юе]тся тестировщиками|\bTBD\b|отметки не проставлены")] private static partial Regex StubText();
 
@@ -59,14 +62,23 @@ public static partial class RuleBasedCritic
                         "Запретить хранение и логирование CVV/CVC; маскировать PAN (первые 6 / последние 4).",
                         "PCI DSS v4.0 req. 3.3.1");
 
+                if (SensitivePii().IsMatch(line) && StoreOrLog().IsMatch(line) && !PiiProtected().IsMatch(line))
+                    Add(s, line, "Логирование/хранение PAN или ПДн без маскирования и шифрования",
+                        "Сохранение PAN, ИИН или номеров карт в открытом виде в логах нарушает PCI DSS и Закон РК № 94-V.", "pci-dss", Severity.Blocker,
+                        "Запретить логирование полного PAN и ПДн; маскировать PAN (6+4), шифровать журналы и хранить ПДн на территории РК.",
+                        "PCI DSS v4.0 req. 3.4 / Закон РК № 94-V");
+
                 if (GetMutation().IsMatch(line))
                     Add(s, line, "Мутация состояния через HTTP GET",
-                        "Изменение настроек/лимитов через GET-запрос нарушает RFC 7231 и приводит к утечке параметров в логи прокси и кэш.",
+                        "Изменение настроек/лимитов или списание средств через GET-запрос нарушает RFC 7231 и приводит к утечке параметров в логи прокси и кэш.",
                         "api-design", Severity.Blocker,
                         "Заменить метод на PUT/POST с передачей параметров в теле application/json.",
                         "RFC 7231 / ISO 29148");
 
-                if (OkWithError().IsMatch(line) && s.Title.Contains("200", StringComparison.OrdinalIgnoreCase))
+                if (OkWithError().IsMatch(line) &&
+                    (s.Title.Contains("200", StringComparison.OrdinalIgnoreCase) ||
+                     line.Contains("200", StringComparison.OrdinalIgnoreCase) ||
+                     s.Text.Contains("HTTP 200", StringComparison.OrdinalIgnoreCase)))
                     Add(s, line, "HTTP 200 OK возвращается при бизнес-ошибке",
                         "Возврат 200 OK с телом {\"result\":\"ERROR\"} нарушает REST-контракт и ломает мониторинг/шлюзы.",
                         "api-design", Severity.Critical,

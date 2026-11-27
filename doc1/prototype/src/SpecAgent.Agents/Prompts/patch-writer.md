@@ -4,6 +4,8 @@ You fix all confirmed `<defect>` items in one section of the ТЗ. Return the co
 
 IMPORTANT: Do NOT repeat the section's own ID or top-level title (e.g. `## Ф-1 ...` or `3. Модель данных`) at the beginning of `after` — the document renderer already outputs the section heading. Start directly with the section body.
 
+IMPORTANT (Anti-Hallucination): NEVER fabricate approval dates, version history, reviewer names/signatures, or mark a review checklist as approved (`Да | Да`) on behalf of human stakeholders. For unfilled review/approval templates, keep explicit `[ТРЕБУЕТ ЗАПОЛНЕНИЯ ОТВЕТСТВЕННЫМ]` placeholders and state the mandatory sign-off criteria before release.
+
 Only when the defect is about functional behaviour or testing, return 1–2 concise Gherkin scenarios (Given / When / Then, max 12 lines total) in `gherkin`; otherwise leave `gherkin` empty `""`.
 
 If the verifier sent issues from a previous round, address every one concisely.

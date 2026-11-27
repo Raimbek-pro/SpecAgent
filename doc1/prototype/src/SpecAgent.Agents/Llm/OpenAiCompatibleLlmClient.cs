@@ -1,5 +1,6 @@
 #pragma warning disable OPENAI001
 using System.ClientModel;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -21,6 +22,7 @@ public sealed class OpenAiCompatibleLlmClient : ILlmClient
     private readonly ISessionUsageStore? _usageStore;
     private readonly SpecAgentMetrics? _metrics;
     private readonly SemaphoreSlim _concurrencyGate;
+    private readonly ConcurrentDictionary<(string Endpoint, string Model, string ApiKey), ChatClient> _clients = new();
     private readonly object _paceLock = new();
     private DateTime _lastCallUtc = DateTime.MinValue;
 
@@ -66,20 +68,23 @@ public sealed class OpenAiCompatibleLlmClient : ILlmClient
             const int maxRetries = 3;
             for (var attempt = 1; attempt <= maxRetries; attempt++)
             {
+                var retryDelayMs = 0;
+                var shouldBreakModel = false;
+
                 await _concurrencyGate.WaitAsync(ct);
                 try
                 {
                     await PaceStartAsync(minDelayMs, ct);
 
                     var started = DateTime.UtcNow;
-                    var chat = new ChatClient(
-                        model: model,
-                        credential: new ApiKeyCredential(apiKey),
+                    var chat = _clients.GetOrAdd((endpoint, model, apiKey), static key => new ChatClient(
+                        model: key.Model,
+                        credential: new ApiKeyCredential(key.ApiKey),
                         options: new OpenAIClientOptions
                         {
-                            Endpoint = new Uri(endpoint),
+                            Endpoint = new Uri(key.Endpoint),
                             NetworkTimeout = TimeSpan.FromMinutes(4),
-                        });
+                        }));
 
                     var options = new ChatCompletionOptions
                     {
@@ -125,26 +130,28 @@ public sealed class OpenAiCompatibleLlmClient : ILlmClient
                 {
                     lastError = ex;
                     _logger.LogWarning("{Agent} hit daily quota on {Model}; switching to fallback immediately.", call.Agent, model);
-                    break;
+                    shouldBreakModel = true;
                 }
                 catch (ClientResultException ex) when (ex.Status is 429 or 503 or 502 or 500 && attempt < maxRetries)
                 {
                     lastError = ex;
-                    var backoffMs = 10000 * attempt;
+                    retryDelayMs = 10000 * attempt;
                     _logger.LogWarning("{Agent} hit HTTP {Status} on {Model} (attempt {Attempt}/{Max}); retrying in {Delay} ms",
-                        call.Agent, ex.Status, model, attempt, maxRetries, backoffMs);
-                    await Task.Delay(backoffMs, ct);
+                        call.Agent, ex.Status, model, attempt, maxRetries, retryDelayMs);
                 }
                 catch (Exception ex) when (!ct.IsCancellationRequested)
                 {
                     lastError = ex;
                     _logger.LogWarning("{Agent} failed on {Model}: {Message}", call.Agent, model, ex.Message);
-                    break;
+                    shouldBreakModel = true;
                 }
                 finally
                 {
                     _concurrencyGate.Release();
                 }
+
+                if (shouldBreakModel) break;
+                if (retryDelayMs > 0) await Task.Delay(retryDelayMs, ct);
             }
         }
 

@@ -106,6 +106,26 @@ public class PdfParserTests
     }
 
     [Fact]
+    public void SectionBuilder_keeps_wrapped_pdf_requirement_lines_in_body_not_title()
+    {
+        var builder = new SectionBuilder();
+        builder.AddLine("2 Функциональные требования", 1);
+        builder.AddLine("Ф-1: Короткий заголовок");
+        builder.AddLine("Тело первого требования.");
+        builder.AddLine("Ф-4 После подтверждения сервис отправляет запрос GET /api/v1/transfers/execute?");
+        builder.AddLine("from=1&to=2&amount=100 и при таймауте повторяет до 3 раз.");
+        var doc = builder.Build("p2p-transfers-tz.pdf");
+
+        var f1 = Assert.Single(doc.Sections, s => s.Id == "Ф-1");
+        Assert.Equal("Короткий заголовок", f1.Title);
+
+        var f4 = Assert.Single(doc.Sections, s => s.Id == "Ф-4");
+        Assert.Equal("", f4.Title);
+        Assert.Contains("GET /api/v1/transfers/execute?", f4.Text);
+        Assert.Contains("повторяет до 3 раз", f4.Text);
+    }
+
+    [Fact]
     public void Pdf_with_cyrillic_complex_headings_and_table_parses_when_truetype_font_available()
     {
         var fontPath = FindCyrillicFont();

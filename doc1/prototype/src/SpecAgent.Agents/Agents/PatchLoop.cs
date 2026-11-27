@@ -82,7 +82,7 @@ public sealed class PatchLoop(ILlmClient llm, PromptLibrary prompts, IEventStore
 
             draft = await llm.CompleteJsonAsync<PatchDraft>(new AgentCall
             {
-                Agent = Writer, System = prompts.System("patch-writer"), User = writerInput.ToString(), MaxTokens = 3000,
+                Agent = Writer, System = prompts.System("patch-writer"), User = writerInput.ToString(), MaxTokens = 4096,
             }, ct);
             await events.AppendAsync(sessionId, EventTypes.PatchDrafted, Writer, $"{primary.Id} round {round}: draft for section {section.Id}", ct: ct);
 
@@ -100,14 +100,27 @@ public sealed class PatchLoop(ILlmClient llm, PromptLibrary prompts, IEventStore
                 break;
             }
 
-            verdict = await llm.CompleteJsonAsync<VerifierOutput>(new AgentCall
+            try
             {
-                Agent = Verifier,
-                System = prompts.System("patch-verifier"),
-                User = $"{defectsBlock}\n<original>\n{section.Text}\n</original>\n<proposed>\n{draft.After}\n</proposed>\n" +
-                       $"<neighbours>\n{doc.ToPromptText(neighbours)}\n</neighbours>",
-                MaxTokens = 1024,
-            }, ct);
+                verdict = await llm.CompleteJsonAsync<VerifierOutput>(new AgentCall
+                {
+                    Agent = Verifier,
+                    System = prompts.System("patch-verifier"),
+                    User = $"{defectsBlock}\n<original>\n{section.Text}\n</original>\n<proposed>\n{draft.After}\n</proposed>\n" +
+                           $"<neighbours>\n{doc.ToPromptText(neighbours)}\n</neighbours>",
+                    MaxTokens = 2500,
+                }, ct);
+            }
+            catch (LlmException ex) when (!ct.IsCancellationRequested)
+            {
+                // Preserve the drafted patch as unverified rather than discarding all work when the verifier fails.
+                logger.LogWarning(ex, "Patch verifier failed for {Section} ({Finding}); keeping draft as unverified", section.Id, primary.Id);
+                verdict = new VerifierOutput { Ok = false, Issues = [$"Верификатор не завершил проверку: {ex.Message}"] };
+                await events.AppendAsync(sessionId, EventTypes.PatchVerified, Verifier,
+                    $"{primary.Id} round {round}: verifier error (kept draft as unverified)", verdict, ct);
+                break;
+            }
+
             await events.AppendAsync(sessionId, EventTypes.PatchVerified, Verifier,
                 verdict.Ok ? $"{primary.Id} round {round}: ok" : $"{primary.Id} round {round}: {verdict.Issues.Count} issue(s)", verdict, ct);
 

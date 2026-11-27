@@ -117,4 +117,43 @@ public class OrchestratorTests
         Assert.Contains("\"Blocker\"", json);
         Assert.Contains("\"sectionId\"", json);
     }
+
+    [Fact]
+    public async Task PatchLoop_preserves_draft_as_unverified_when_verifier_fails()
+    {
+        var id = await IngestDemoSpecAsync();
+        _llm.FailWithLlmErrorOn = PatchLoop.Verifier;
+
+        await NewWorker().RunAsync(id);
+
+        var report = await ReportAsync(id);
+        Assert.NotEmpty(report.Patches);
+        Assert.All(report.Patches, p =>
+        {
+            Assert.False(p.Verified);
+            Assert.Contains("Idempotency-Key", p.After);
+            Assert.NotEmpty(p.VerifierNotes);
+        });
+    }
+
+    [Fact]
+    public void Rule_based_critic_catches_get_execute_pseudo_200_and_unmasked_pan_logging()
+    {
+        var builder = new SectionBuilder();
+        builder.AddLine("1 Функциональные требования", 1);
+        builder.AddLine("Ф-4 После подтверждения сервис отправляет запрос GET /api/v1/transfers/execute?from=1&to=2");
+        builder.AddLine("2 Контракт API", 1);
+        builder.AddLine("При ошибке валидации API возвращает HTTP 200 OK с телом {\"result\": \"ERROR\", \"message\": \"Недостаточно средств\"}");
+        builder.AddLine("3 Логирование", 1);
+        builder.AddLine("Шлюз сохраняет в общий лог полный JSON запроса, включая номер карты (PAN) и ИИН клиента.");
+        builder.AddLine("4 Безопасное логирование", 1);
+        builder.AddLine("Запрещено логировать полный PAN и ИИН; PAN маскируется (6+4) и логи шифруются.");
+        var doc = builder.Build("synthetic.pdf");
+
+        var findings = RuleBasedCritic.Review(doc);
+        Assert.Contains(findings, f => f.SectionId == "Ф-4" && f.Category == "api-design" && f.SuggestedSeverity == Severity.Blocker);
+        Assert.Contains(findings, f => f.SectionId == "2" && f.Category == "api-design" && f.SuggestedSeverity == Severity.Critical);
+        Assert.Contains(findings, f => f.SectionId == "3" && f.Category == "pci-dss" && f.SuggestedSeverity == Severity.Blocker);
+        Assert.DoesNotContain(findings, f => f.SectionId == "4" && f.Category == "pci-dss");
+    }
 }

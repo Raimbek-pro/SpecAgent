@@ -14,6 +14,9 @@ public sealed partial class FakeLlmClient : ILlmClient
     /// <summary>Agent name → simulate the worker process dying during that agent's call (once).</summary>
     public string? CrashOnceOn { get; set; }
 
+    /// <summary>Agent name → simulate an LlmException (e.g. output truncated) on every call to that agent.</summary>
+    public string? FailWithLlmErrorOn { get; set; }
+
     [GeneratedRegex("\"id\":\"([^\"]+)\"")] private static partial Regex RawId();
 
     public Task<T> CompleteJsonAsync<T>(AgentCall call, CancellationToken ct = default) where T : class
@@ -23,6 +26,10 @@ public sealed partial class FakeLlmClient : ILlmClient
         {
             CrashOnceOn = null;
             throw new OperationCanceledException("simulated worker crash");
+        }
+        if (FailWithLlmErrorOn == call.Agent)
+        {
+            throw new LlmException($"{call.Agent}: simulated truncation at max_tokens");
         }
 
         object result = (typeof(T).Name, call.Agent) switch
